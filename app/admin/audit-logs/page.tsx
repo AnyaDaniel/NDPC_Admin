@@ -5,6 +5,7 @@ import { AUDIT_LOGS } from "@/lib/mock-data";
 import { FilterBar } from "@/components/admin/ui/FilterBar";
 import { Tabs } from "@/components/admin/ui/Tabs";
 import { StatCard } from "@/components/admin/ui/StatCard";
+import { BackendPendingNotice } from "@/components/admin/ui/BackendPendingNotice";
 
 const SCOPE_ICON: Record<string, React.ReactNode> = {
   user:    <Users size={15} />,
@@ -39,6 +40,8 @@ export default function AuditLogsPage() {
         </div>
         <button className="btn"><Download size={14} /> Export (CSV)</button>
       </div>
+
+      <BackendPendingNotice label="full audit log export and filtering" />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
         <StatCard eyebrow="Events today"  icon={FileText}  value="1,284" delta="+11%"              deltaDir="up" sparkData={[40,55,68,72,80,92,128]} />

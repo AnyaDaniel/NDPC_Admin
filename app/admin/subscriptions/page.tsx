@@ -8,6 +8,7 @@ import { FilterBar } from "@/components/admin/ui/FilterBar";
 import { Tabs } from "@/components/admin/ui/Tabs";
 import { StatCard } from "@/components/admin/ui/StatCard";
 import { Modal } from "@/components/admin/ui/Modal";
+import { BackendPendingNotice } from "@/components/admin/ui/BackendPendingNotice";
 import { CreditCard, AlertTriangle, TrendingDown } from "lucide-react";
 
 type Tab = "all" | "active" | "pending" | "expired" | "cancelled";
@@ -41,6 +42,8 @@ export default function SubscriptionsPage() {
           <button className="btn btn-primary" onClick={() => setShowActivate(true)}><Plus size={14} /> Activate manually</button>
         </div>
       </div>
+
+      <BackendPendingNotice label="subscriptions" />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16 }}>
         <StatCard eyebrow="Active subscriptions" icon={CreditCard}    value="8,941"              delta="+1.8% MoM"    deltaDir="up" sparkData={[60,62,65,68,72,75,80].map(v=>v*10)} />

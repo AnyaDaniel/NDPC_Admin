@@ -8,6 +8,7 @@ import { FilterBar } from "@/components/admin/ui/FilterBar";
 import { Tabs } from "@/components/admin/ui/Tabs";
 import { StatCard } from "@/components/admin/ui/StatCard";
 import { Modal } from "@/components/admin/ui/Modal";
+import { BackendPendingNotice } from "@/components/admin/ui/BackendPendingNotice";
 import { CreditCard, CheckCircle, Clock, AlertTriangle } from "lucide-react";
 
 type Tab = "all" | "success" | "pending" | "failed";
@@ -37,6 +38,8 @@ export default function PaymentsPage() {
         </div>
         <button className="btn"><Download size={14} /> Export ledger</button>
       </div>
+
+      <BackendPendingNotice label="payments" />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
         <StatCard eyebrow="Captured (30d)" icon={CreditCard}    value={NAIRA(totalSuccess)} delta="+18.2% MoM" deltaDir="up"  sparkData={[40,45,50,60,70,80,90]} sparkColor="var(--ndpc-green)" />

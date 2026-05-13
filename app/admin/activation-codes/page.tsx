@@ -1,33 +1,38 @@
-"use client";
+﻿"use client";
 import { useState } from "react";
-import { Download, Plus, Copy, Pause, MoreHorizontal, Check } from "lucide-react";
-import { CODES } from "@/lib/mock-data";
+import { Copy, Plus, Check, KeyRound, RefreshCw } from "lucide-react";
+import { adminApi } from "@/lib/admin-api";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
-import { FilterBar } from "@/components/admin/ui/FilterBar";
-import { Tabs } from "@/components/admin/ui/Tabs";
-import { StatCard } from "@/components/admin/ui/StatCard";
 import { Modal } from "@/components/admin/ui/Modal";
-import { KeyRound, CheckCircle, Clock } from "lucide-react";
+import { EmptyState } from "@/components/admin/ui/EmptyState";
 
-type Tab = "all" | "unused" | "active" | "used" | "expired" | "deactivated";
+type CodeRow = { code: string; maxUses: number; expiresAt: string };
 
 export default function ActivationCodesPage() {
-  const [tab, setTab] = useState<Tab>("all");
-  const [search, setSearch] = useState("");
   const [showGen, setShowGen] = useState(false);
   const [count, setCount] = useState(10);
+  const [maxUses, setMaxUses] = useState(1);
+  const [expiresInDays, setExpiresInDays] = useState(30);
+  const [codes, setCodes] = useState<CodeRow[]>([]);
   const [copied, setCopied] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const filtered = CODES.filter(c => {
-    if (tab !== "all" && c.status !== tab) return false;
-    if (search && !c.code.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const generate = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await adminApi.createActivationCodes({ count, maxUses, expiresInDays });
+      setCodes(result.codes);
+      setShowGen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to generate codes");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const counts: Record<string, number> = { all: CODES.length };
-  ["unused","active","used","expired","deactivated"].forEach(k => { counts[k] = CODES.filter(c => c.status === k).length; });
-
-  const handleCopy = (code: string) => {
+  const copy = (code: string) => {
     navigator.clipboard.writeText(code).catch(() => {});
     setCopied(code);
     setTimeout(() => setCopied(null), 2000);
@@ -39,100 +44,44 @@ export default function ActivationCodesPage() {
         <div>
           <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--ink-3)", marginBottom: 6 }}>COMMERCE · ACTIVATION CODES</div>
           <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", margin: 0 }}>Activation Code Management</h1>
-          <p style={{ color: "var(--ink-3)", marginTop: 4, fontSize: 13.5 }}>Bulk-generate redemption codes for enterprise sales, scholarships and giveaways.</p>
+          <p style={{ color: "var(--ink-3)", marginTop: 4, fontSize: 13.5 }}>Generate live activation codes from the backend. Historical list endpoint is backend pending.</p>
         </div>
-        <div className="flex gap-2">
-          <button className="btn"><Download size={14} /> Export codes</button>
-          <button className="btn btn-primary" onClick={() => setShowGen(true)}><Plus size={14} /> Generate codes</button>
-        </div>
+        <button className="btn btn-primary" onClick={() => setShowGen(true)}><Plus size={14} /> Generate codes</button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16 }}>
-        <StatCard eyebrow="Codes generated"   icon={KeyRound}    value="1,284" delta="+50 this week"       deltaDir="up" sparkData={[10,20,15,30,28,40,50]} />
-        <StatCard eyebrow="Redeemed"          icon={CheckCircle} value="812"   delta="63% redemption rate" deltaDir="up" sparkData={[8,10,12,14,16,18,20]} sparkColor="var(--ndpc-green)" />
-        <StatCard eyebrow="Expiring next 30d" icon={Clock}       value="42"    delta="Review before issuance"             sparkData={[2,4,3,5,6,5,7]} sparkColor="var(--ndpc-amber)" />
-      </div>
+      {error && <div className="card" style={{ padding: 14, color: "var(--ndpc-red)", marginBottom: 16 }}>{error}</div>}
 
       <div className="card">
-        <Tabs value={tab} onChange={v => setTab(v as Tab)} tabs={[
-          { value: "all",         label: "All",         count: counts.all },
-          { value: "unused",      label: "Unused",      count: counts.unused },
-          { value: "active",      label: "Active",      count: counts.active },
-          { value: "used",        label: "Used",        count: counts.used },
-          { value: "expired",     label: "Expired",     count: counts.expired },
-          { value: "deactivated", label: "Deactivated", count: counts.deactivated },
-        ]} />
-        <FilterBar search={search} onSearch={setSearch} placeholder="Search by code…" />
-        <div style={{ overflowX: "auto" }}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Code</th><th>Uses</th><th>Expires</th><th>Status</th>
-                <th>Created</th><th>Created by</th><th style={{ width: 120 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(c => (
-                <tr key={c.id}>
-                  <td><span className="code-chip">{c.code}</span></td>
-                  <td><span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12.5 }}>{c.uses} / {c.max}</span></td>
-                  <td><span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11.5, color: "var(--ink-3)" }}>{c.expires}</span></td>
-                  <td><StatusBadge value={c.status} /></td>
-                  <td><span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11.5, color: "var(--ink-3)" }}>{c.created}</span></td>
-                  <td>{c.by}</td>
-                  <td>
-                    <div className="flex gap-1 justify-end">
-                      <button className="btn btn-icon btn-ghost btn-sm" title="Copy" onClick={() => handleCopy(c.code)}>
-                        {copied === c.code ? <Check size={13} style={{ color: "var(--ndpc-green)" }} /> : <Copy size={13} />}
-                      </button>
-                      <button className="btn btn-icon btn-ghost btn-sm" title="Deactivate"><Pause size={13} /></button>
-                      <button className="btn btn-icon btn-ghost btn-sm"><MoreHorizontal size={13} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {codes.length === 0 ? (
+          <EmptyState icon={KeyRound} title="No generated batch in this session" description="Use Generate codes to create a live backend batch. Activation-code listing remains backend pending." />
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl">
+              <thead><tr><th>Code</th><th>Uses</th><th>Expires</th><th>Status</th><th style={{ width: 80 }}></th></tr></thead>
+              <tbody>
+                {codes.map(c => (
+                  <tr key={c.code}>
+                    <td><span className="code-chip">{c.code}</span></td>
+                    <td><span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12.5 }}>0 / {c.maxUses}</span></td>
+                    <td><span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11.5, color: "var(--ink-3)" }}>{new Date(c.expiresAt).toLocaleDateString()}</span></td>
+                    <td><StatusBadge value="unused" /></td>
+                    <td><button className="btn btn-icon btn-ghost btn-sm" title="Copy" onClick={() => copy(c.code)}>{copied === c.code ? <Check size={13} /> : <Copy size={13} />}</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      <Modal open={showGen} onClose={() => setShowGen(false)} size="lg"
-        title="Generate activation codes"
-        footer={<>
-          <button className="btn" onClick={() => setShowGen(false)}>Cancel</button>
-          <button className="btn"><Download size={14} /> Export CSV</button>
-          <button className="btn btn-primary" onClick={() => setShowGen(false)}><Plus size={14} /> Generate {count} codes</button>
-        </>}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          {[
-            { label: "How many codes?", type: "number", value: count, onChange: (e: React.ChangeEvent<HTMLInputElement>) => setCount(+e.target.value || 1) },
-            { label: "Max uses per code", type: "number", defaultValue: 1 },
-          ].map(({ label, ...rest }) => (
-            <div key={label}>
-              <label style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>{label}</label>
-              <input className="input" {...(rest as React.InputHTMLAttributes<HTMLInputElement>)} />
-            </div>
-          ))}
-          <div>
-            <label style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Plan unlocked</label>
-            <select className="input"><option>Annual Pro (₦96,000)</option><option>Monthly Pro (₦12,000)</option></select>
-          </div>
-          <div>
-            <label style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Expiry date</label>
-            <input className="input" type="date" defaultValue="2026-12-31" />
-          </div>
-          <div>
-            <label style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Prefix</label>
-            <input className="input" defaultValue="NDPC" />
-          </div>
-          <div>
-            <label style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Batch label (internal)</label>
-            <input className="input" placeholder="e.g. May 2026 — NDIC Partnership" />
-          </div>
-        </div>
-        <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 8 }}>Format preview</div>
-          <span className="code-chip" style={{ display: "inline-block", padding: "8px 12px" }}>NDPC-XXXX-YYYY-ZZZZ</span>
+      <Modal open={showGen} onClose={() => setShowGen(false)} size="lg" title="Generate activation codes" footer={<>
+        <button className="btn" onClick={() => setShowGen(false)}>Cancel</button>
+        <button className="btn btn-primary" onClick={generate} disabled={loading}>{loading ? <RefreshCw size={14} /> : <Plus size={14} />} Generate {count} codes</button>
+      </>}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+          <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>How many codes?</span><input className="input" type="number" value={count} min={1} max={1000} onChange={e => setCount(+e.target.value || 1)} /></label>
+          <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Max uses</span><input className="input" type="number" value={maxUses} min={1} max={50} onChange={e => setMaxUses(+e.target.value || 1)} /></label>
+          <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Expires in days</span><input className="input" type="number" value={expiresInDays} min={1} max={365} onChange={e => setExpiresInDays(+e.target.value || 30)} /></label>
         </div>
       </Modal>
     </div>

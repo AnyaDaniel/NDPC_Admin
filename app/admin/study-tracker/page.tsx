@@ -4,6 +4,7 @@ import { Download, Users, Clock, CheckCircle, Zap, Send } from "lucide-react";
 import { STUDY_LEADERS } from "@/lib/mock-data";
 import { UserCell, Avatar } from "@/components/admin/ui/Avatar";
 import { StatCard } from "@/components/admin/ui/StatCard";
+import { BackendPendingNotice } from "@/components/admin/ui/BackendPendingNotice";
 
 function Sparkline({ data }: { data: number[] }) {
   const max = Math.max(...data), min = Math.min(...data);
@@ -56,6 +57,8 @@ export default function StudyTrackerPage() {
           <button className="btn"><Download size={14} /> Export</button>
         </div>
       </div>
+
+      <BackendPendingNotice label="study tracking analytics" />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
         <StatCard eyebrow="Active learners (DAU)" icon={Users}       value="4,128"  delta="+6.2% WoW"  deltaDir="up" sparkData={[40,42,45,48,50,55,62]} />

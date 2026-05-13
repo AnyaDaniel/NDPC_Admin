@@ -1,7 +1,8 @@
-"use client";
-import { Search, Bell, Moon, Sun, ChevronDown } from "lucide-react";
+﻿"use client";
+import { Search, Bell, Moon, Sun } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { AdminSessionMenu } from "@/components/admin/layout/AuthGate";
 
 const CRUMBS: Record<string, [string, string]> = {
   "/admin":                  ["Overview", "Dashboard"],
@@ -32,7 +33,6 @@ export function Topbar() {
   return (
     <header className="admin-header">
       <div className="flex items-center gap-3.5" style={{ height: 56, padding: "0 20px" }}>
-        {/* Breadcrumb */}
         <div className="flex items-center gap-2" style={{ fontSize: 13, color: "var(--ink-3)" }}>
           <svg width="18" height="18" viewBox="0 0 30 30" fill="none">
             <rect width="30" height="30" rx="8" fill="#1E4CC4"/>
@@ -44,35 +44,21 @@ export function Topbar() {
           <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, color: "var(--ink-4)" }}>/</span>
           <span style={{ color: "var(--ink)", fontWeight: 500 }}>{crumb[1]}</span>
         </div>
-
         <div className="flex-1" />
-
-        {/* Search */}
         <button className="flex items-center gap-2 hd-search" style={{ minWidth: 260, padding: "0 10px", height: 34, border: "1px solid var(--line)", borderRadius: 8, background: "var(--bg-sunk)", color: "var(--ink-3)", fontSize: 13 }}>
           <Search size={14} />
-          <span style={{ flex: 1, textAlign: "left" }}>Search users, payments, courses…</span>
-          <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: 4, padding: "1px 5px" }}>⌘K</span>
+          <span style={{ flex: 1, textAlign: "left" }}>Search users, payments, courses...</span>
+          <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: 4, padding: "1px 5px" }}>Ctrl K</span>
         </button>
-
-        {/* Theme toggle */}
         <button className="btn btn-icon" style={{ border: "1px solid var(--line)" }} onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
           {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
         </button>
-
-        {/* Notifications */}
         <button className="btn btn-icon" style={{ border: "1px solid var(--line)", position: "relative" }}>
           <Bell size={15} />
           <span style={{ position: "absolute", top: 7, right: 7, width: 7, height: 7, borderRadius: "50%", background: "var(--ndpc-blue)", border: "2px solid var(--bg-elev)" }} />
         </button>
-
         <div style={{ width: 1, height: 22, background: "var(--line)" }} />
-
-        {/* Profile */}
-        <button className="flex items-center gap-2.5" style={{ padding: "4px 8px 4px 4px", borderRadius: 999, border: "1px solid var(--line)", background: "var(--bg-elev)" }}>
-          <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, var(--ndpc-blue), var(--ndpc-blue-2))", color: "white", display: "grid", placeItems: "center", fontWeight: 600, fontSize: 11 }}>HO</div>
-          <span style={{ fontSize: 12.5, fontWeight: 500 }}>Harrison O.</span>
-          <ChevronDown size={13} style={{ color: "var(--ink-3)" }} />
-        </button>
+        <AdminSessionMenu />
       </div>
     </header>
   );

@@ -7,6 +7,7 @@ import { FilterBar } from "@/components/admin/ui/FilterBar";
 import { Tabs } from "@/components/admin/ui/Tabs";
 import { StatCard } from "@/components/admin/ui/StatCard";
 import { Modal } from "@/components/admin/ui/Modal";
+import { BackendPendingNotice } from "@/components/admin/ui/BackendPendingNotice";
 import { RefreshCw, ShieldOff, Smartphone, AlertTriangle, Plus, Check } from "lucide-react";
 
 type Tab = "all" | "pending" | "completed" | "expired";
@@ -43,6 +44,8 @@ export default function ResetManagementPage() {
           <button className="btn btn-primary" onClick={() => setShowForce(true)}><AlertTriangle size={14} /> Force password reset</button>
         </div>
       </div>
+
+      <BackendPendingNotice label="reset management" />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
         <StatCard eyebrow="Pending resets"    icon={RefreshCw}  value={counts.pending}   delta="2 urgent"  sparkData={[1,2,1,2,2,3,2]} sparkColor="var(--ndpc-amber)" />

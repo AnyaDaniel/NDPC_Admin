@@ -1,12 +1,15 @@
-import { Sidebar } from "@/components/admin/layout/Sidebar";
+﻿import { Sidebar } from "@/components/admin/layout/Sidebar";
 import { Topbar } from "@/components/admin/layout/Topbar";
+import { AuthGate } from "@/components/admin/layout/AuthGate";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="admin-shell">
-      <Sidebar />
-      <Topbar />
-      <main className="admin-main">{children}</main>
-    </div>
+    <AuthGate>
+      <div className="admin-shell">
+        <Sidebar />
+        <Topbar />
+        <main className="admin-main">{children}</main>
+      </div>
+    </AuthGate>
   );
 }

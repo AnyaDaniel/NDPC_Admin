@@ -1,6 +1,7 @@
 "use client";
 import { Users, Zap, ShieldOff, Smartphone, Clock, CreditCard, AlertTriangle, Award, Download, Plus, TrendingUp, TrendingDown, ChevronRight, BookOpen, DollarSign } from "lucide-react";
 import { StatCard } from "@/components/admin/ui/StatCard";
+import { BackendPendingNotice } from "@/components/admin/ui/BackendPendingNotice";
 import { ACTIVITY_FEED, PAYMENTS, NAIRA, COURSES } from "@/lib/mock-data";
 
 const ENROL = [42,38,55,61,58,72,80,75,68,84,90,88,94,102,98,110,118,114,120,132,128,124,138,145,142,150,162,158,170,182];
@@ -45,6 +46,8 @@ export default function DashboardPage() {
           <button className="btn btn-primary"><Plus size={14} /> Quick action</button>
         </div>
       </div>
+
+      <BackendPendingNotice label="dashboard analytics and revenue metrics" />
 
       {/* KPI grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>

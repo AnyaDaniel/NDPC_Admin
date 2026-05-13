@@ -8,6 +8,7 @@ import { Avatar, UserCell } from "@/components/admin/ui/Avatar";
 import { FilterBar } from "@/components/admin/ui/FilterBar";
 import { StatCard } from "@/components/admin/ui/StatCard";
 import { Modal } from "@/components/admin/ui/Modal";
+import { BackendPendingNotice } from "@/components/admin/ui/BackendPendingNotice";
 
 // ─── Permission catalogue ─────────────────────────────────────
 const ALL_PERMISSIONS = [
@@ -239,6 +240,8 @@ export default function AdminsPage() {
         </div>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={14} /> New admin</button>
       </div>
+
+      <BackendPendingNotice label="admin account management" />
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>

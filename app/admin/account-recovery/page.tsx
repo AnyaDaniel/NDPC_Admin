@@ -8,6 +8,7 @@ import { FilterBar } from "@/components/admin/ui/FilterBar";
 import { Tabs } from "@/components/admin/ui/Tabs";
 import { StatCard } from "@/components/admin/ui/StatCard";
 import { Modal } from "@/components/admin/ui/Modal";
+import { BackendPendingNotice } from "@/components/admin/ui/BackendPendingNotice";
 import { Clock, Lock, RefreshCw } from "lucide-react";
 
 type Tab = "all" | "pending" | "approved" | "rejected";
@@ -39,6 +40,8 @@ export default function AccountRecoveryPage() {
           <p style={{ color: "var(--ink-3)", marginTop: 4, fontSize: 13.5 }}>Password reset requests, locked accounts, failed login recovery and manual approval queue.</p>
         </div>
       </div>
+
+      <BackendPendingNotice label="account recovery workflow" />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
         <StatCard eyebrow="Pending requests"   icon={Clock}      value={counts.pending}  delta="2 urgent"      sparkData={[1,2,1,3,2,3,3]} sparkColor="var(--ndpc-amber)" />
