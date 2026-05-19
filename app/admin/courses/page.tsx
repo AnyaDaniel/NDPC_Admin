@@ -171,6 +171,40 @@ export default function CoursesPage() {
     }
   };
 
+  const removeModule = async (module: AdminModule) => {
+    if (!confirm(`Delete ${module.title}? Lessons inside this module will also be removed.`)) return;
+    setContentBusy(true);
+    setContentError(null);
+    try {
+      await adminApi.deleteModule(module.id);
+      const next = modules.filter(item => item.id !== module.id);
+      setModules(next);
+      const nextSelected = next[0]?.id ?? "";
+      setSelectedModuleId(nextSelected);
+      setLessons([]);
+      if (nextSelected) await changeModule(nextSelected);
+      await reload();
+    } catch (err) {
+      setContentError(err instanceof Error ? err.message : "Unable to delete module.");
+    } finally {
+      setContentBusy(false);
+    }
+  };
+
+  const removeLesson = async (lesson: AdminLesson) => {
+    if (!confirm(`Delete ${lesson.title}?`)) return;
+    setContentBusy(true);
+    setContentError(null);
+    try {
+      await adminApi.deleteLesson(lesson.id);
+      setLessons(current => current.filter(item => item.id !== lesson.id));
+    } catch (err) {
+      setContentError(err instanceof Error ? err.message : "Unable to delete lesson.");
+    } finally {
+      setContentBusy(false);
+    }
+  };
+
   const setContentType = (value: typeof lessonContentType) => {
     setLessonContentType(value);
     setLessonMimeType(value === "pdf" ? "application/pdf" : value === "video" ? "video/mp4" : "text/plain");
@@ -226,11 +260,11 @@ export default function CoursesPage() {
             <div>
               <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>Class/module</div>
               <select className="input" value={selectedModuleId} onChange={e => changeModule(e.target.value)}><option value="">Select module</option>{modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}</select>
-              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>{modules.length === 0 ? <EmptyState icon={Layers} title="No modules yet" description="Create a class/module before adding lessons." /> : modules.map(m => <button key={m.id} className={`btn ${m.id === selectedModuleId ? "btn-primary" : ""}`} onClick={() => changeModule(m.id)} style={{ justifyContent: "flex-start" }}><Layers size={13} /> {m.title}</button>)}</div>
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>{modules.length === 0 ? <EmptyState icon={Layers} title="No modules yet" description="Create a class/module before adding lessons." /> : modules.map(m => <div key={m.id} className="flex gap-1"><button className={`btn ${m.id === selectedModuleId ? "btn-primary" : ""}`} onClick={() => changeModule(m.id)} style={{ justifyContent: "flex-start", flex: 1 }}><Layers size={13} /> {m.title}</button><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={() => removeModule(m)}><Trash2 size={13} /></button></div>)}</div>
             </div>
             <div>
               <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>Lessons in {selectedModule?.title ?? "module"}</div>
-              <div style={{ border: "1px solid var(--hairline)", borderRadius: 8, minHeight: 134, overflow: "hidden" }}>{lessons.length === 0 ? <EmptyState icon={FileText} title="No lessons yet" description="Add a video, PDF, text, or interactive lesson." /> : <table className="tbl"><tbody>{lessons.map(l => <tr key={l.id}><td>{l.title}</td><td>{l.contentType}</td><td className="id-mono">{l.contentUrl ? "url" : "-"}</td></tr>)}</tbody></table>}</div>
+              <div style={{ border: "1px solid var(--hairline)", borderRadius: 8, minHeight: 134, overflow: "hidden" }}>{lessons.length === 0 ? <EmptyState icon={FileText} title="No lessons yet" description="Add a video, PDF, text, or interactive lesson." /> : <table className="tbl"><tbody>{lessons.map(l => <tr key={l.id}><td>{l.title}</td><td>{l.contentType}</td><td className="id-mono">{l.contentUrl ? "url" : "-"}</td><td><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={() => removeLesson(l)}><Trash2 size={13} /></button></td></tr>)}</tbody></table>}</div>
             </div>
           </div>
           <div style={{ display: "grid", gap: 12, borderTop: "1px solid var(--hairline)", paddingTop: 14 }}>

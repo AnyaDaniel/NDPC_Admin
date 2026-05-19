@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { HelpCircle, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { HelpCircle, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 import { adminApi, AdminAssessment, AdminCourse, AdminModule, AdminQuestion } from "@/lib/admin-api";
 import { EmptyState } from "@/components/admin/ui/EmptyState";
 import { Modal } from "@/components/admin/ui/Modal";
@@ -115,6 +115,45 @@ export default function AssessmentsPage() {
     setQuestions(data.questions ?? []);
   };
 
+  const importQuestionsJson = async (file: File) => {
+    if (!selectedAssessmentId) return;
+    try {
+      const raw = JSON.parse(await file.text());
+      const rows = Array.isArray(raw) ? raw : Array.isArray(raw.questions) ? raw.questions : [];
+      if (rows.length === 0) throw new Error("JSON must be an array or an object with a questions array.");
+
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index] as Record<string, unknown>;
+        const questionText = String(row.questionText ?? row.question ?? row.text ?? "").trim();
+        if (!questionText) continue;
+        const questionType = String(row.questionType ?? row.type ?? "multipleChoice");
+        const rawOptions = row.options;
+        const options = Array.isArray(rawOptions)
+          ? rawOptions.map(String)
+          : typeof rawOptions === "string"
+            ? rawOptions.split("\n").map(v => v.trim()).filter(Boolean)
+            : questionType === "trueFalse"
+              ? ["true", "false"]
+              : undefined;
+        await adminApi.createQuestion({
+          assessmentId: selectedAssessmentId,
+          questionText,
+          questionType,
+          options,
+          correctAnswer: row.correctAnswer == null ? undefined : String(row.correctAnswer),
+          points: Number(row.points ?? 1),
+          requiresAiGrading: Boolean(row.requiresAiGrading),
+          orderIndex: questions.length + index,
+        });
+      }
+
+      const data = await adminApi.questions(selectedAssessmentId);
+      setQuestions(data.questions ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to import questions JSON");
+    }
+  };
+
   const removeAssessment = async (assessment: AdminAssessment) => {
     if (!confirm(`Delete ${assessment.title}?`)) return;
     await adminApi.deleteAssessment(assessment.id);
@@ -147,7 +186,7 @@ export default function AssessmentsPage() {
           {loading ? <EmptyState icon={RefreshCw} title="Loading assessments" /> : assessments.length === 0 ? <EmptyState icon={HelpCircle} title="No assessments found" description="Create a test or exam for this course/module." /> : <table className="tbl"><thead><tr><th>Assessment</th><th>Type</th><th>Pass</th><th></th></tr></thead><tbody>{assessments.map(a => <tr key={a.id} onClick={() => setSelectedAssessmentId(a.id)} style={{ cursor: "pointer", background: selectedAssessmentId === a.id ? "var(--selected)" : undefined }}><td><div style={{ fontWeight: 500 }}>{a.title}</div><div className="id-mono">{a.module?.title ?? a.course?.title ?? a.id}</div></td><td><StatusBadge value="active" label={a.type} /></td><td>{a.passingScore}%</td><td><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={e => { e.stopPropagation(); removeAssessment(a); }}><Trash2 size={13} /></button></td></tr>)}</tbody></table>}
         </div>
         <div className="card">
-          <div className="flex items-center justify-between" style={{ padding: 14, borderBottom: "1px solid var(--line)" }}><div><div style={{ fontWeight: 600 }}>{selectedAssessment?.title ?? "Select an assessment"}</div><div style={{ color: "var(--ink-3)", fontSize: 12 }}>{questions.length} questions</div></div><button className="btn btn-primary" disabled={!selectedAssessmentId} onClick={() => setShowQuestion(true)}><Plus size={14} /> Add question</button></div>
+          <div className="flex items-center justify-between" style={{ padding: 14, borderBottom: "1px solid var(--line)" }}><div><div style={{ fontWeight: 600 }}>{selectedAssessment?.title ?? "Select an assessment"}</div><div style={{ color: "var(--ink-3)", fontSize: 12 }}>{questions.length} questions</div></div><div className="flex gap-2"><label className={`btn ${!selectedAssessmentId ? "btn-disabled" : ""}`}><Upload size={14} /> Import JSON<input type="file" accept="application/json,.json" disabled={!selectedAssessmentId} style={{ display: "none" }} onChange={e => { const file = e.target.files?.[0]; if (file) importQuestionsJson(file); e.currentTarget.value = ""; }} /></label><button className="btn btn-primary" disabled={!selectedAssessmentId} onClick={() => setShowQuestion(true)}><Plus size={14} /> Add question</button></div></div>
           {!selectedAssessmentId ? <EmptyState title="No assessment selected" /> : questions.length === 0 ? <EmptyState title="No questions yet" /> : <table className="tbl"><thead><tr><th>Question</th><th>Type</th><th>Pts</th><th></th></tr></thead><tbody>{questions.map(q => <tr key={q.id}><td style={{ whiteSpace: "normal" }}>{q.questionText}</td><td>{q.questionType}</td><td>{q.points}</td><td><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={() => removeQuestion(q)}><Trash2 size={13} /></button></td></tr>)}</tbody></table>}
         </div>
       </div>

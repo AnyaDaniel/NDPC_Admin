@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Download, Users, Clock, CheckCircle, Zap, Send } from "lucide-react";
 import { STUDY_LEADERS } from "@/lib/mock-data";
+import { adminApi, AdminCourse, AdminUser } from "@/lib/admin-api";
 import { UserCell, Avatar } from "@/components/admin/ui/Avatar";
 import { StatCard } from "@/components/admin/ui/StatCard";
 import { BackendPendingNotice } from "@/components/admin/ui/BackendPendingNotice";
@@ -39,6 +40,27 @@ function Heatmap() {
 
 export default function StudyTrackerPage() {
   const [period, setPeriod] = useState("7d");
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [courses, setCourses] = useState<AdminCourse[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      adminApi.users({ pageSize: 100 }),
+      adminApi.courses({ pageSize: 100 }),
+    ])
+      .then(([userData, courseData]) => {
+        setUsers(userData.users ?? []);
+        setCourses(courseData.courses ?? []);
+      })
+      .catch(() => {
+        setUsers([]);
+        setCourses([]);
+      });
+  }, []);
+
+  const learners = users.filter(user => user.role === "learner");
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const newLearners = learners.filter(user => user.createdAt && new Date(user.createdAt).getTime() >= sevenDaysAgo);
 
   return (
     <div style={{ padding: "20px 24px 64px", maxWidth: 1480, margin: "0 auto" }}>
@@ -61,10 +83,10 @@ export default function StudyTrackerPage() {
       <BackendPendingNotice label="study tracking analytics" />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
-        <StatCard eyebrow="Active learners (DAU)" icon={Users}       value="4,128"  delta="+6.2% WoW"  deltaDir="up" sparkData={[40,42,45,48,50,55,62]} />
-        <StatCard eyebrow="Hours studied (7d)"    icon={Clock}       value="38,420" delta="+12% WoW"   deltaDir="up" sparkData={[3,4,5,6,7,8,9]} sparkColor="var(--ndpc-green)" />
-        <StatCard eyebrow="Lessons completed"     icon={CheckCircle} value="22,184" delta="+8.4% WoW"  deltaDir="up" sparkData={[20,24,26,28,30,33,36]} />
-        <StatCard eyebrow="Longest streak"        icon={Zap}         value="21"     suffix="days"      delta="Sade Ojo" sparkData={[5,8,10,14,17,19,21]} />
+        <StatCard eyebrow="Registered learners" icon={Users}       value={learners.length}  delta={`${newLearners.length} new 7d`}  deltaDir="up" sparkData={[1,2,3,4,5,6,7]} />
+        <StatCard eyebrow="Courses"             icon={Clock}       value={courses.length} delta={`${courses.filter(c => c.isPublished).length} published`}   deltaDir="up" sparkData={[3,4,5,6,7,8,9]} sparkColor="var(--ndpc-green)" />
+        <StatCard eyebrow="Verified learners"   icon={CheckCircle} value={learners.filter(u => u.isEmailVerified).length} delta="live users"  deltaDir="up" sparkData={[2,3,4,5,6,7,8]} />
+        <StatCard eyebrow="Study analytics"     icon={Zap}         value="pending" delta="backend" sparkData={[5,8,10,14,17,19,21]} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, alignItems: "start" }}>
