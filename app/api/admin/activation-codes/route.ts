@@ -66,6 +66,14 @@ export async function GET(request: NextRequest) {
     });
 
     const text = await response.text();
+    if (response.status === 404) {
+      return NextResponse.json({
+        success: true,
+        message: "Activation-code listing endpoint is not deployed on the backend yet.",
+        data: { codes: [], total: 0, page: 1, pageSize: 100 },
+      });
+    }
+
     return new NextResponse(text, {
       status: response.status,
       headers: {
