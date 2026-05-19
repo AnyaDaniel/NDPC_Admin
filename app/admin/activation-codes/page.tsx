@@ -19,6 +19,36 @@ type CodeRow = ActivationCode | {
   createdAt?: string;
 };
 
+const CACHE_KEY = "ndpc_admin_activation_codes_cache";
+
+function readCachedCodes(): CodeRow[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCachedCodes(codes: CodeRow[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CACHE_KEY, JSON.stringify(codes));
+}
+
+function mergeCodes(primary: CodeRow[], secondary: CodeRow[]) {
+  const seen = new Set<string>();
+  const merged: CodeRow[] = [];
+  [...primary, ...secondary].forEach((code) => {
+    if (seen.has(code.code)) return;
+    seen.add(code.code);
+    merged.push(code);
+  });
+  return merged;
+}
+
 export default function ActivationCodesPage() {
   const [showGen, setShowGen] = useState(false);
   const [count, setCount] = useState(10);
@@ -37,7 +67,13 @@ export default function ActivationCodesPage() {
     setError(null);
     try {
       const result = await adminApi.activationCodes({ pageSize: 100, search, status });
-      setCodes(result.codes);
+      if (result.codes.length > 0) {
+        setCodes(result.codes);
+        writeCachedCodes(result.codes);
+      } else {
+        const cached = readCachedCodes();
+        setCodes(cached);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load activation codes");
     } finally {
@@ -46,6 +82,7 @@ export default function ActivationCodesPage() {
   };
 
   useEffect(() => {
+    setCodes(readCachedCodes());
     loadCodes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -61,7 +98,18 @@ export default function ActivationCodesPage() {
         { signal: controller.signal }
       );
       if (!result.codes?.length) throw new Error("Backend returned no activation codes.");
-      await loadCodes();
+      const generated = result.codes.map((code) => ({
+        ...code,
+        id: code.code,
+        usedCount: 0,
+        usesCount: 0,
+        status: "unused",
+        createdAt: new Date().toISOString(),
+      }));
+      const merged = mergeCodes(generated, codes);
+      setCodes(merged);
+      writeCachedCodes(merged);
+      loadCodes().catch(() => {});
       setShowGen(false);
     } catch (err) {
       const message = err instanceof DOMException && err.name === "AbortError"
