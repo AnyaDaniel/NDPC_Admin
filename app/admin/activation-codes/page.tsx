@@ -1,13 +1,23 @@
-﻿"use client";
-import { useState } from "react";
-import { Copy, Plus, Check, KeyRound, RefreshCw } from "lucide-react";
-import { adminApi } from "@/lib/admin-api";
-import { StatusBadge } from "@/components/admin/ui/StatusBadge";
-import { Modal } from "@/components/admin/ui/Modal";
-import { EmptyState } from "@/components/admin/ui/EmptyState";
-import { API_BASE_URL } from "@/lib/api-client";
+"use client";
 
-type CodeRow = { code: string; maxUses: number; expiresAt: string };
+import { useEffect, useState } from "react";
+import { Check, Copy, KeyRound, Plus, RefreshCw } from "lucide-react";
+import { ActivationCode, adminApi } from "@/lib/admin-api";
+import { API_BASE_URL } from "@/lib/api-client";
+import { EmptyState } from "@/components/admin/ui/EmptyState";
+import { Modal } from "@/components/admin/ui/Modal";
+import { StatusBadge } from "@/components/admin/ui/StatusBadge";
+
+type CodeRow = ActivationCode | {
+  id?: string;
+  code: string;
+  usedCount?: number;
+  usesCount?: number;
+  maxUses: number;
+  expiresAt: string | null;
+  status?: string;
+  createdAt?: string;
+};
 
 export default function ActivationCodesPage() {
   const [showGen, setShowGen] = useState(false);
@@ -15,9 +25,30 @@ export default function ActivationCodesPage() {
   const [maxUses, setMaxUses] = useState(1);
   const [expiresInDays, setExpiresInDays] = useState(30);
   const [codes, setCodes] = useState<CodeRow[]>([]);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingList, setLoadingList] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const loadCodes = async () => {
+    setLoadingList(true);
+    setError(null);
+    try {
+      const result = await adminApi.activationCodes({ pageSize: 100, search, status });
+      setCodes(result.codes);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load activation codes");
+    } finally {
+      setLoadingList(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCodes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const generate = async () => {
     setLoading(true);
@@ -30,7 +61,7 @@ export default function ActivationCodesPage() {
         { signal: controller.signal }
       );
       if (!result.codes?.length) throw new Error("Backend returned no activation codes.");
-      setCodes(result.codes);
+      await loadCodes();
       setShowGen(false);
     } catch (err) {
       const message = err instanceof DOMException && err.name === "AbortError"
@@ -58,28 +89,47 @@ export default function ActivationCodesPage() {
       <div className="flex items-end justify-between gap-4 mb-5">
         <div>
           <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--ink-3)", marginBottom: 6 }}>COMMERCE · ACTIVATION CODES</div>
-          <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", margin: 0 }}>Activation Code Management</h1>
-          <p style={{ color: "var(--ink-3)", marginTop: 4, fontSize: 13.5 }}>Generate live activation codes from the backend. Historical list endpoint is backend pending.</p>
+          <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Activation Code Management</h1>
+          <p style={{ color: "var(--ink-3)", marginTop: 4, fontSize: 13.5 }}>Generate and manage live backend activation codes.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowGen(true)}><Plus size={14} /> Generate codes</button>
+        <div className="flex gap-2">
+          <button className="btn" onClick={loadCodes} disabled={loadingList}><RefreshCw size={14} /> Refresh</button>
+          <button className="btn btn-primary" onClick={() => setShowGen(true)}><Plus size={14} /> Generate codes</button>
+        </div>
       </div>
 
       {error && <div className="card" style={{ padding: 14, color: "var(--ndpc-red)", marginBottom: 16 }}>{error}</div>}
 
       <div className="card">
-        {codes.length === 0 ? (
-          <EmptyState icon={KeyRound} title="No generated batch in this session" description="Use Generate codes to create a live backend batch. Activation-code listing remains backend pending." />
+        <div className="flex gap-2" style={{ padding: 18, borderBottom: "1px solid var(--hairline)" }}>
+          <input className="input" placeholder="Search activation codes..." value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Enter") loadCodes(); }} />
+          <select className="input" style={{ maxWidth: 180 }} value={status} onChange={e => setStatus(e.target.value)}>
+            <option value="">All statuses</option>
+            <option value="unused">Unused</option>
+            <option value="active">Active</option>
+            <option value="expired">Expired</option>
+            <option value="maxed">Maxed</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          <button className="btn" onClick={loadCodes} disabled={loadingList}>Apply</button>
+        </div>
+
+        {loadingList ? (
+          <EmptyState icon={RefreshCw} title="Loading activation codes" />
+        ) : codes.length === 0 ? (
+          <EmptyState icon={KeyRound} title="No activation codes found" description="Generate codes to create a live backend batch." />
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table className="tbl">
-              <thead><tr><th>Code</th><th>Uses</th><th>Expires</th><th>Status</th><th style={{ width: 80 }}></th></tr></thead>
+              <thead><tr><th>Code</th><th>Uses</th><th>Expires</th><th>Status</th><th>Created</th><th style={{ width: 80 }}></th></tr></thead>
               <tbody>
                 {codes.map(c => (
-                  <tr key={c.code}>
+                  <tr key={c.id ?? c.code}>
                     <td><span className="code-chip">{c.code}</span></td>
-                    <td><span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12.5 }}>0 / {c.maxUses}</span></td>
-                    <td><span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11.5, color: "var(--ink-3)" }}>{new Date(c.expiresAt).toLocaleDateString()}</span></td>
-                    <td><StatusBadge value="unused" /></td>
+                    <td><span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 12.5 }}>{c.usedCount ?? c.usesCount ?? 0} / {c.maxUses}</span></td>
+                    <td><span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11.5, color: "var(--ink-3)" }}>{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "-"}</span></td>
+                    <td><StatusBadge value={c.status ?? "unused"} /></td>
+                    <td><span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11.5, color: "var(--ink-3)" }}>{c.createdAt ? new Date(c.createdAt).toLocaleString() : "-"}</span></td>
                     <td><button className="btn btn-icon btn-ghost btn-sm" title="Copy" onClick={() => copy(c.code)}>{copied === c.code ? <Check size={13} /> : <Copy size={13} />}</button></td>
                   </tr>
                 ))}

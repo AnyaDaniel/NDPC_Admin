@@ -99,6 +99,18 @@ export type DeviceLog = {
   timestamp: string;
 };
 
+export type ActivationCode = {
+  id: string;
+  code: string;
+  usedCount: number;
+  usesCount?: number;
+  maxUses: number;
+  expiresAt: string | null;
+  status: "unused" | "active" | "expired" | "maxed" | "inactive" | string;
+  createdAt: string;
+  createdBy?: { id: string; name: string | null; email: string } | null;
+};
+
 export type UploadResult = {
   kind: string;
   fileName: string;
@@ -169,6 +181,34 @@ export const adminApi = {
       );
     }
     if (!envelope?.data) throw new Error("Activation-code response was empty.");
+    return envelope.data;
+  },
+
+  async activationCodes(params: { page?: number; pageSize?: number; search?: string; status?: string } = {}, options: { signal?: AbortSignal } = {}) {
+    const token = getAccessToken();
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "") as [string, string][]).toString();
+    const response = await fetch(`/api/admin/activation-codes${q ? `?${q}` : ""}`, {
+      method: "GET",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      signal: options.signal,
+    });
+    const envelope = await response.json().catch(() => null) as {
+      success?: boolean;
+      message?: string;
+      data?: Paginated<"codes", ActivationCode>;
+      error?: { code?: string; message?: string; details?: unknown };
+    } | null;
+    if (!response.ok || envelope?.success === false) {
+      throw new ApiError(
+        envelope?.error?.message || envelope?.message || response.statusText || "Unable to fetch activation codes",
+        response.status,
+        envelope?.error?.code,
+        envelope?.error?.details
+      );
+    }
+    if (!envelope?.data) throw new Error("Activation-code list response was empty.");
     return envelope.data;
   },
 
