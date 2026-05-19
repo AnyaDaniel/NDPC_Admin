@@ -19,7 +19,9 @@ export default function UploadsPage() {
   const [moduleId, setModuleId] = useState("");
   const [lessonTitle, setLessonTitle] = useState("");
   const [durationMinutes, setDurationMinutes] = useState("0");
+  const [newModuleTitle, setNewModuleTitle] = useState("Module 1");
   const [loading, setLoading] = useState(false);
+  const [creatingModule, setCreatingModule] = useState(false);
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -29,7 +31,8 @@ export default function UploadsPage() {
       .then(data => {
         const list = data.courses ?? [];
         setCourses(list);
-        setCourseId(current => current || list[0]?.id || "");
+        const preferred = list.find(course => (course.modulesCount ?? 0) > 0) ?? list[0];
+        setCourseId(current => current || preferred?.id || "");
       })
       .catch(() => setError("Unable to load courses for lesson creation."));
   }, []);
@@ -52,6 +55,35 @@ export default function UploadsPage() {
         setError("Unable to load modules for the selected course.");
       });
   }, [courseId]);
+
+  const createModule = async () => {
+    if (!courseId) {
+      setError("Select a course before creating a class/module.");
+      return;
+    }
+    const title = newModuleTitle.trim() || "Module 1";
+    setCreatingModule(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const created = await adminApi.createModule({
+        courseId,
+        title,
+        orderIndex: modules.length,
+        hasAITester: false,
+      });
+      setModules(current => [...current, created.module]);
+      setModuleId(created.module.id);
+      setCourses(current => current.map(course => course.id === courseId
+        ? { ...course, modulesCount: (course.modulesCount ?? 0) + 1 }
+        : course));
+      setMessage(`Class/module created: ${created.module.title}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create class/module.");
+    } finally {
+      setCreatingModule(false);
+    }
+  };
 
   const upload = async (file: File) => {
     setLoading(true);
@@ -116,6 +148,7 @@ export default function UploadsPage() {
           <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Minutes</span><input className="input" type="number" min={0} value={durationMinutes} onChange={e => setDurationMinutes(e.target.value)} /></label>
         </div>
         {!selectedCourse && <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 12 }}>Create or select a course with at least one class/module before creating lessons.</div>}
+        {selectedCourse && modules.length === 0 && <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "end", padding: "12px 0", marginBottom: 12, borderTop: "1px solid var(--hairline)", borderBottom: "1px solid var(--hairline)" }}><label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>No class/module exists for this course</span><input className="input" value={newModuleTitle} onChange={e => setNewModuleTitle(e.target.value)} placeholder="Module 1" /></label><button className="btn btn-primary" disabled={creatingModule} onClick={createModule}><Plus size={13} /> {creatingModule ? "Creating..." : "Create module"}</button></div>}
         <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, border: "2px dashed var(--hairline)", borderRadius: 12, padding: "28px 20px", cursor: "pointer", textAlign: "center", background: "var(--bg-sunk)" }}>
           <input type="file" accept={accept} style={{ display: "none" }} onChange={e => { const file = e.target.files?.[0]; if (file) upload(file); e.currentTarget.value = ""; }} />
           <Icon size={22} style={{ color: "var(--ndpc-blue)" }} />

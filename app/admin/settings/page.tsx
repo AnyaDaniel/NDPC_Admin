@@ -1,33 +1,52 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Save, Eye, EyeOff, Bell, Moon, Sun, Shield, Smartphone, Activity, Plus, Trash2 } from "lucide-react";
 import { Avatar } from "@/components/admin/ui/Avatar";
 import { Tabs } from "@/components/admin/ui/Tabs";
+import { AdminDensity, AdminTheme, applyAppearance, readDensity, readTheme } from "@/lib/appearance";
 
 export default function SettingsPage() {
   const [tab, setTab] = useState("profile");
   const [showPw, setShowPw] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [density, setDensity] = useState("comfortable");
+  const [theme, setTheme] = useState<AdminTheme>("light");
+  const [density, setDensity] = useState<AdminDensity>("comfortable");
   const [notifs, setNotifs] = useState({ email: true, push: true, failedPayments: true, newUsers: false, certIssued: true, systemAlerts: true });
 
   const toggle = (key: keyof typeof notifs) => setNotifs(n => ({ ...n, [key]: !n[key] }));
 
+  useEffect(() => {
+    const storedTheme = readTheme();
+    const storedDensity = readDensity();
+    setTheme(storedTheme);
+    setDensity(storedDensity);
+    applyAppearance(storedTheme, storedDensity);
+  }, []);
+
+  const setAppearanceTheme = (nextTheme: AdminTheme) => {
+    setTheme(nextTheme);
+    applyAppearance(nextTheme, density);
+  };
+
+  const setAppearanceDensity = (nextDensity: AdminDensity) => {
+    setDensity(nextDensity);
+    applyAppearance(theme, nextDensity);
+  };
+
   const densityVariants = {
     compact: {
-      color: "var(--ndpc-blue)",
-      lightBg: "color-mix(in srgb, var(--ndpc-blue) 12%, var(--bg-elev))",
-      darkBg: "color-mix(in srgb, var(--ndpc-blue) 18%, var(--bg-elev))",
+      color: "var(--density-accent)",
+      lightBg: "color-mix(in srgb, var(--density-accent) 12%, var(--bg-elev))",
+      darkBg: "color-mix(in srgb, var(--density-accent) 18%, var(--bg-elev))",
     },
     comfortable: {
-      color: "var(--ndpc-green)",
-      lightBg: "linear-gradient(135deg, color-mix(in srgb, var(--ndpc-green) 18%, white), color-mix(in srgb, var(--ndpc-amber) 18%, white))",
-      darkBg: "linear-gradient(135deg, color-mix(in srgb, var(--ndpc-green) 30%, #14162a), color-mix(in srgb, var(--ndpc-amber) 35%, #14162a))",
+      color: "var(--density-accent)",
+      lightBg: "color-mix(in srgb, var(--density-accent) 12%, var(--bg-elev))",
+      darkBg: "color-mix(in srgb, var(--density-accent) 18%, var(--bg-elev))",
     },
     roomy: {
-      color: "var(--ndpc-purple)",
-      lightBg: "linear-gradient(135deg, color-mix(in srgb, var(--ndpc-purple) 15%, white), color-mix(in srgb, var(--ndpc-blue) 20%, white))",
-      darkBg: "linear-gradient(135deg, color-mix(in srgb, var(--ndpc-purple) 28%, #14162a), color-mix(in srgb, var(--ndpc-blue) 26%, #14162a))",
+      color: "var(--density-accent)",
+      lightBg: "color-mix(in srgb, var(--density-accent) 12%, var(--bg-elev))",
+      darkBg: "color-mix(in srgb, var(--density-accent) 18%, var(--bg-elev))",
     },
   } as const;
 
@@ -134,7 +153,7 @@ export default function SettingsPage() {
                       : "var(--bg-elev)";
 
                     return (
-                      <button key={t} onClick={() => { setTheme(t); document.documentElement.setAttribute("data-theme", t); }}
+                      <button key={t} onClick={() => setAppearanceTheme(t)}
                         className="flex flex-col items-center gap-2 p-4 rounded-xl"
                         style={{ border: `2px solid ${themeBorder}`, background: themeBg, cursor: "pointer" }}>
                         {t === "light" ? <Sun size={20} /> : <Moon size={20} />}
@@ -147,7 +166,7 @@ export default function SettingsPage() {
               <div>
                 <div style={{ fontWeight: 500, marginBottom: 12 }}>Density</div>
                 <div className="flex gap-2">
-                  {["compact","comfortable","roomy"].map(d => {
+                  {(["compact","comfortable","roomy"] as AdminDensity[]).map(d => {
                     const variant = densityVariants[d as keyof typeof densityVariants];
                     const selected = density === d;
                     const background = selected ? (theme === "light" ? variant.lightBg : variant.darkBg) : "var(--bg-elev)";
@@ -155,7 +174,7 @@ export default function SettingsPage() {
                     const textColor = selected ? variant.color : "var(--ink-2)";
 
                     return (
-                      <button key={d} onClick={() => setDensity(d)}
+                      <button key={d} onClick={() => setAppearanceDensity(d)}
                         className="btn"
                         style={{ borderColor, color: textColor, background, boxShadow: selected ? "0 0 0 1px rgba(0,0,0,0.05)" : undefined }}>
                         {d.charAt(0).toUpperCase() + d.slice(1)}

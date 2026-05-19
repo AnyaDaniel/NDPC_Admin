@@ -53,6 +53,11 @@ function notifyAuthExpired() {
   window.dispatchEvent(new CustomEvent("ndpc-admin-auth-expired"));
 }
 
+function shouldClearSessionFor401(path: string, sentBearerToken: boolean, code?: string) {
+  if (!sentBearerToken || path.startsWith("/auth/")) return false;
+  return !code || code === "UNAUTHORIZED" || code === "TOKEN_EXPIRED" || code === "INVALID_TOKEN";
+}
+
 export function getAdminUser<T = unknown>(): T | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(USER_KEY);
@@ -86,7 +91,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
 
   if (!response.ok || envelope?.success === false) {
     const message = envelope?.error?.message || envelope?.message || response.statusText || "Request failed";
-    if (response.status === 401 && sentBearerToken && !path.startsWith("/auth/")) {
+    if (response.status === 401 && shouldClearSessionFor401(path, sentBearerToken, envelope?.error?.code)) {
       notifyAuthExpired();
     }
     throw new ApiError(message, response.status, envelope?.error?.code, envelope?.error?.details);

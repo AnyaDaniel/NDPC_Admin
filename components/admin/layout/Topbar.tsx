@@ -3,6 +3,7 @@ import { Search, Bell, Moon, Sun } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { AdminSessionMenu } from "@/components/admin/layout/AuthGate";
+import { AdminTheme, applyAppearance, readDensity, readTheme } from "@/lib/appearance";
 
 const CRUMBS: Record<string, [string, string]> = {
   "/admin":                  ["Overview", "Dashboard"],
@@ -13,6 +14,7 @@ const CRUMBS: Record<string, [string, string]> = {
   "/admin/payments":         ["Commerce", "Payments"],
   "/admin/activation-codes": ["Commerce", "Activation Codes"],
   "/admin/courses":          ["Learning", "Courses & Content"],
+  "/admin/assessments":      ["Learning", "Tests & Exams"],
   "/admin/uploads":          ["Learning", "Uploads"],
   "/admin/certificates":     ["Learning", "Certificates"],
   "/admin/account-recovery": ["Security", "Account Recovery"],
@@ -23,12 +25,21 @@ const CRUMBS: Record<string, [string, string]> = {
 
 export function Topbar() {
   const pathname = usePathname();
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<AdminTheme>("light");
   const crumb = CRUMBS[pathname] ?? ["Admin", pathname.split("/").pop() ?? ""];
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
+    const storedTheme = readTheme();
+    const storedDensity = readDensity();
+    setTheme(storedTheme);
+    applyAppearance(storedTheme, storedDensity);
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    applyAppearance(next, readDensity());
+  };
 
   return (
     <header className="admin-header">
@@ -50,7 +61,7 @@ export function Topbar() {
           <span style={{ flex: 1, textAlign: "left" }}>Search users, payments, courses...</span>
           <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: 4, padding: "1px 5px" }}>Ctrl K</span>
         </button>
-        <button className="btn btn-icon" style={{ border: "1px solid var(--line)" }} onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
+        <button className="btn btn-icon" style={{ border: "1px solid var(--line)" }} onClick={toggleTheme}>
           {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
         </button>
         <button className="btn btn-icon" style={{ border: "1px solid var(--line)", position: "relative" }}>

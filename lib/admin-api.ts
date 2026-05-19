@@ -18,6 +18,35 @@ export type Paginated<TName extends string, T> = Record<TName, T[]> & {
   pageSize: number;
 };
 
+export type AdminAssessment = {
+  id: string;
+  courseId: string;
+  moduleId?: string | null;
+  title: string;
+  description?: string | null;
+  type: "preCourseTest" | "moduleQuiz" | "moduleExam" | "finalExam" | string;
+  timeLimitMinutes?: number | null;
+  passingScore: number;
+  allowRetake: boolean;
+  maxAttempts: number;
+  course?: { title: string };
+  module?: { title: string } | null;
+  questions?: { id: string }[];
+  _count?: { attempts: number };
+};
+
+export type AdminQuestion = {
+  id: string;
+  assessmentId: string;
+  questionText: string;
+  questionType: "multipleChoice" | "trueFalse" | "shortAnswer" | "essay" | "practical" | string;
+  options?: unknown;
+  correctAnswer?: string | null;
+  points: number;
+  requiresAiGrading: boolean;
+  orderIndex: number;
+};
+
 export type AdminCourse = {
   id: string;
   title: string;
@@ -52,6 +81,8 @@ export type AdminLesson = {
   storageProvider?: string | null;
   storageKey?: string | null;
   mimeType?: string | null;
+  allowOffline?: boolean;
+  isEncryptedAsset?: boolean;
   durationMinutes?: number | null;
   orderIndex: number;
 };
@@ -180,7 +211,33 @@ export const adminApi = {
     return apiRequest(`/ai-tester/sessions/${sessionId}/final-assessment`, { method: "POST", body: JSON.stringify({}) });
   },
 
-  certificates() { return apiRequest<{ certificates: Certificate[] }>("/certificates"); },
+  assessments(params: { courseId?: string; moduleId?: string } = {}) {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "") as [string, string][]).toString();
+    return apiRequest<{ assessments: AdminAssessment[] }>(`/admin/assessments${q ? `?${q}` : ""}`);
+  },
+  createAssessment(payload: Partial<AdminAssessment>) {
+    return apiRequest<{ assessment: AdminAssessment }>("/admin/assessments", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateAssessment(id: string, payload: Partial<AdminAssessment>) {
+    return apiRequest<{ assessment: AdminAssessment }>(`/admin/assessments/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+  deleteAssessment(id: string) {
+    return apiRequest<void>(`/admin/assessments/${id}`, { method: "DELETE" });
+  },
+  questions(assessmentId: string) {
+    return apiRequest<{ questions: AdminQuestion[] }>(`/admin/assessments/${assessmentId}/questions`);
+  },
+  createQuestion(payload: Partial<AdminQuestion>) {
+    return apiRequest<{ question: AdminQuestion }>("/admin/questions", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateQuestion(id: string, payload: Partial<AdminQuestion>) {
+    return apiRequest<{ question: AdminQuestion }>(`/admin/questions/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+  deleteQuestion(id: string) {
+    return apiRequest<void>(`/admin/questions/${id}`, { method: "DELETE" });
+  },
+
+  certificates() { return apiRequest<{ certificates: Certificate[] }>("/admin/certificates"); },
   certificate(id: string) { return apiRequest<{ certificate: Certificate }>(`/certificates/${id}`); },
   generateCertificate(courseId: string) { return apiRequest<{ certificate: Certificate }>("/certificates/generate", { method: "POST", body: JSON.stringify({ courseId }) }); },
   async verifyCertificate(certificateNumber: string) {
