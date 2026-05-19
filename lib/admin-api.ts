@@ -1,5 +1,7 @@
 ﻿import { apiRequest, setAdminSession } from "./api-client";
 
+import { ApiError, getAccessToken } from "./api-client";
+
 export type AdminUser = {
   id: string;
   name: string | null;
@@ -141,11 +143,33 @@ export const adminApi = {
     return apiRequest<Paginated<"users", AdminUser>>(`/admin/users${q ? `?${q}` : ""}`);
   },
 
-  createActivationCodes(payload: { count: number; maxUses: number; expiresInDays: number }) {
-    return apiRequest<{ codes: { code: string; maxUses: number; expiresAt: string }[] }>("/admin/activation-codes", {
+  async createActivationCodes(payload: { count: number; maxUses: number; expiresInDays: number }, options: { signal?: AbortSignal } = {}) {
+    const token = getAccessToken();
+    const response = await fetch("/api/admin/activation-codes", {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(payload),
+      signal: options.signal,
     });
+    const envelope = await response.json().catch(() => null) as {
+      success?: boolean;
+      message?: string;
+      data?: { codes: { code: string; maxUses: number; expiresAt: string }[] };
+      error?: { code?: string; message?: string; details?: unknown };
+    } | null;
+    if (!response.ok || envelope?.success === false) {
+      throw new ApiError(
+        envelope?.error?.message || envelope?.message || response.statusText || "Unable to generate activation codes",
+        response.status,
+        envelope?.error?.code,
+        envelope?.error?.details
+      );
+    }
+    if (!envelope?.data) throw new Error("Activation-code response was empty.");
+    return envelope.data;
   },
 
   deviceLogs(params: { page?: number; pageSize?: number; userId?: string; startDate?: string } = {}) {

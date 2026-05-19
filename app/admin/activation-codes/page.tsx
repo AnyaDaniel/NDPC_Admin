@@ -5,6 +5,7 @@ import { adminApi } from "@/lib/admin-api";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
 import { Modal } from "@/components/admin/ui/Modal";
 import { EmptyState } from "@/components/admin/ui/EmptyState";
+import { API_BASE_URL } from "@/lib/api-client";
 
 type CodeRow = { code: string; maxUses: number; expiresAt: string };
 
@@ -21,13 +22,27 @@ export default function ActivationCodesPage() {
   const generate = async () => {
     setLoading(true);
     setError(null);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 25000);
     try {
-      const result = await adminApi.createActivationCodes({ count, maxUses, expiresInDays });
+      const result = await adminApi.createActivationCodes(
+        { count, maxUses, expiresInDays },
+        { signal: controller.signal }
+      );
+      if (!result.codes?.length) throw new Error("Backend returned no activation codes.");
       setCodes(result.codes);
       setShowGen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to generate codes");
+      const message = err instanceof DOMException && err.name === "AbortError"
+        ? "Activation-code generation timed out. Confirm the live backend is reachable from this browser."
+        : err instanceof TypeError && err.message === "Failed to fetch"
+          ? `Failed to reach backend at ${API_BASE_URL}. Check the deployed admin API URL, CORS, and backend availability.`
+          : err instanceof Error
+            ? err.message
+            : "Unable to generate codes";
+      setError(message);
     } finally {
+      window.clearTimeout(timeout);
       setLoading(false);
     }
   };
@@ -75,9 +90,14 @@ export default function ActivationCodesPage() {
       </div>
 
       <Modal open={showGen} onClose={() => setShowGen(false)} size="lg" title="Generate activation codes" footer={<>
-        <button className="btn" onClick={() => setShowGen(false)}>Cancel</button>
+        <button className="btn" onClick={() => setShowGen(false)} disabled={loading}>Cancel</button>
         <button className="btn btn-primary" onClick={generate} disabled={loading}>{loading ? <RefreshCw size={14} /> : <Plus size={14} />} Generate {count} codes</button>
       </>}>
+        {error && (
+          <div style={{ padding: 12, border: "1px solid var(--ndpc-red)", borderRadius: 8, color: "var(--ndpc-red)", marginBottom: 14 }}>
+            {error}
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
           <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>How many codes?</span><input className="input" type="number" value={count} min={1} max={1000} onChange={e => setCount(+e.target.value || 1)} /></label>
           <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Max uses</span><input className="input" type="number" value={maxUses} min={1} max={50} onChange={e => setMaxUses(+e.target.value || 1)} /></label>
