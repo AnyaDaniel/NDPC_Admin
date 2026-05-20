@@ -124,6 +124,9 @@ export type UploadResult = {
   lessonDefaults: Partial<AdminLesson> & { allowOffline?: boolean; isEncryptedAsset?: boolean; publicUrl?: string };
 };
 
+const DIRECT_UPLOAD_API_BASE_URL =
+  (process.env.NEXT_PUBLIC_UPLOAD_API_BASE_URL ?? "https://trixlearn-backend.net-trixsolutions.com/api/v1").replace(/\/$/, "");
+
 export type Certificate = Record<string, unknown> & {
   id?: string;
   certificateNumber?: string;
@@ -257,12 +260,39 @@ export const adminApi = {
     return apiRequest<void>(`/admin/lessons/${id}`, { method: "DELETE" });
   },
 
-  upload(kind: "video" | "pdf" | "material", file: File) {
-    return apiRequest<UploadResult>(`/admin/uploads?kind=${kind}`, {
+  async upload(kind: "video" | "pdf" | "material", file: File) {
+    const token = getAccessToken();
+    const response = await fetch(`${DIRECT_UPLOAD_API_BASE_URL}/admin/uploads?kind=${encodeURIComponent(kind)}`, {
       method: "POST",
-      headers: { "Content-Type": file.type || "application/octet-stream", "x-file-name": file.name },
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "Content-Type": file.type || "application/octet-stream",
+        "x-file-name": file.name,
+      },
       body: file,
     });
+
+    const text = await response.text();
+    const envelope = text
+      ? JSON.parse(text) as {
+          success?: boolean;
+          message?: string;
+          data?: UploadResult;
+          error?: { code?: string; message?: string; details?: unknown };
+        }
+      : null;
+
+    if (!response.ok || envelope?.success === false) {
+      throw new ApiError(
+        envelope?.error?.message || envelope?.message || response.statusText || "Upload failed",
+        response.status,
+        envelope?.error?.code,
+        envelope?.error?.details
+      );
+    }
+
+    if (!envelope?.data) throw new Error("Upload response was empty.");
+    return envelope.data;
   },
 
   startAiSession(payload: { courseId: string; moduleId?: string; topic?: string }) {
