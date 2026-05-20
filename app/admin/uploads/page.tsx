@@ -9,6 +9,32 @@ import { EmptyState } from "@/components/admin/ui/EmptyState";
 
 type UploadKind = "video" | "pdf" | "material";
 type Row = UploadResult & { id: string; uploadedAt: string; lessonId?: string; lessonTitle?: string };
+const maxUploadBytes = 3 * 1024 * 1024 * 1024;
+
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
+function uploadErrorMessage(err: unknown, file: File) {
+  if (err instanceof ApiError) {
+    if (err.status === 401) return "Your admin session expired. Please sign in again.";
+    if (err.status === 404) return "Upload endpoint is not available on the live backend yet.";
+    if (err.code === "INVALID_FILE_TYPE") return "Unsupported file type for this upload category.";
+
+    const code = err.code ? ` (${err.code})` : "";
+    return `Upload failed${code}: ${err.message}`;
+  }
+
+  if (err instanceof TypeError && err.message.toLowerCase().includes("failed to fetch")) {
+    return `Upload failed: the browser connection to the backend was interrupted while sending ${file.name} (${formatBytes(file.size)}). If this is a large video, confirm the backend and Nginx large-upload settings are deployed.`;
+  }
+
+  if (err instanceof Error) return `Upload failed: ${err.message}`;
+  return "Upload failed. Please check the file and try again.";
+}
 
 export default function UploadsPage() {
   const [kind, setKind] = useState<UploadKind>("video");
@@ -86,6 +112,11 @@ export default function UploadsPage() {
   };
 
   const upload = async (file: File) => {
+    if (file.size > maxUploadBytes) {
+      setError(`Upload is too large: ${file.name} is ${formatBytes(file.size)}. Maximum upload size is 3GB.`);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setMessage(null);
@@ -95,10 +126,7 @@ export default function UploadsPage() {
       if (!lessonTitle.trim()) setLessonTitle(file.name.replace(/\.[^.]+$/, ""));
       setMessage("Upload saved. Select a class/module and create a lesson.");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) setError("Your admin session expired. Please sign in again.");
-      else if (err instanceof ApiError && err.status === 404) setError("Upload endpoint is not available on the live backend yet.");
-      else if (err instanceof ApiError && err.code === "INVALID_FILE_TYPE") setError("Unsupported file type for this upload category.");
-      else setError("Upload failed. Please check the file and try again.");
+      setError(uploadErrorMessage(err, file));
     } finally { setLoading(false); }
   };
 
@@ -153,7 +181,7 @@ export default function UploadsPage() {
           <input type="file" accept={accept} style={{ display: "none" }} onChange={e => { const file = e.target.files?.[0]; if (file) upload(file); e.currentTarget.value = ""; }} />
           <Icon size={22} style={{ color: "var(--ndpc-blue)" }} />
           <div style={{ fontSize: 13, fontWeight: 600 }}>{loading ? "Uploading..." : `Select ${kind} file`}</div>
-          <div style={{ fontSize: 11, color: "var(--ink-4)" }}>Backend validates kind, MIME type, and raw file bytes.</div>
+          <div style={{ fontSize: 11, color: "var(--ink-4)" }}>Backend validates kind and MIME type. Maximum upload size is 3GB.</div>
         </label>
       </div>
       <div className="card">{rows.length === 0 ? <EmptyState icon={Upload} title="No uploads in this session" description="Uploaded files will appear here with backend URLs and lesson defaults." /> : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>File</th><th>Kind</th><th>Size</th><th>URL</th><th>Lesson</th><th></th></tr></thead><tbody>{rows.map(r => <tr key={r.id}><td>{r.fileName}</td><td>{r.kind}</td><td>{Math.round(r.sizeBytes / 1024)} KB</td><td><a href={r.contentUrl} target="_blank" rel="noreferrer" className="id-mono">{r.contentUrl}</a></td><td>{r.lessonId ? <><StatusBadge value="active" label="created" /> <span className="id-mono">{r.lessonId}</span></> : <StatusBadge value="draft" label="not attached" />}</td><td><button className="btn btn-sm" disabled={Boolean(r.lessonId) || creatingId === r.id || !moduleId} onClick={() => createLesson(r)}><Plus size={12} /> {creatingId === r.id ? "Creating..." : "Create lesson"}</button></td></tr>)}</tbody></table></div>}</div>
