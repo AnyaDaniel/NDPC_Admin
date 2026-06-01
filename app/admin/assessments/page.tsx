@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, HelpCircle, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 import { adminApi, AdminAssessment, AdminCourse, AdminModule, AdminQuestion } from "@/lib/admin-api";
+import { ApiError } from "@/lib/api-client";
 import { EmptyState } from "@/components/admin/ui/EmptyState";
 import { Modal } from "@/components/admin/ui/Modal";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
@@ -67,7 +68,7 @@ function inferStandaloneAssessmentType(root: Record<string, unknown>): Assessmen
 
 function moduleNumber(value: unknown) {
   const match = String(value ?? "").match(/(?:module|^m)\s*[_-]?\s*(\d+)/i);
-  return match?.[1] ?? "";
+  return match?.[1] ? String(Number(match[1])) : "";
 }
 
 function assessmentTypeLabel(type: string) {
@@ -84,6 +85,17 @@ function requiredQuestionCount(type: string) {
   if (type === "moduleQuiz" || type === "moduleExam") return 8;
   if (type === "finalExam") return 20;
   return 1;
+}
+
+function requestErrorMessage(err: unknown) {
+  if (!(err instanceof ApiError)) return err instanceof Error ? err.message : "Unable to submit assessment JSON";
+  const details = asRecord(err.details);
+  const fieldErrors = asRecord(details?.fieldErrors);
+  const fields = fieldErrors
+    ? Object.entries(fieldErrors).flatMap(([field, messages]) =>
+        Array.isArray(messages) ? messages.map(message => `${field}: ${String(message)}`) : [])
+    : [];
+  return fields.length > 0 ? `${err.message}. ${fields.join(" ")}` : err.message;
 }
 
 function assessmentRowsFromJson(raw: unknown) {
@@ -393,7 +405,7 @@ export default function AssessmentsPage() {
       setImportPreview(null);
       setMessage(`Stored in backend: ${createdCount} assessment${createdCount === 1 ? "" : "s"} and ${questionCount} question${questionCount === 1 ? "" : "s"}.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to import assessment JSON");
+      setError(requestErrorMessage(err));
     } finally {
       setImporting(false);
     }
