@@ -47,6 +47,7 @@ export default function UploadsPage() {
   const [durationMinutes, setDurationMinutes] = useState("0");
   const [newModuleTitle, setNewModuleTitle] = useState("Module 1");
   const [loading, setLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
   const [creatingModule, setCreatingModule] = useState(false);
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -113,21 +114,39 @@ export default function UploadsPage() {
 
   const upload = async (file: File) => {
     if (file.size > maxUploadBytes) {
-      setError(`Upload is too large: ${file.name} is ${formatBytes(file.size)}. Maximum upload size is 3GB.`);
-      return;
+      throw new Error(`Upload is too large: ${file.name} is ${formatBytes(file.size)}. Maximum upload size is 3GB.`);
     }
 
+    const result = await adminApi.upload(kind, file);
+    setRows(r => [{ ...result, id: `${Date.now()}-${file.name}`, uploadedAt: new Date().toISOString() }, ...r]);
+  };
+
+  const uploadFiles = async (files: File[]) => {
+    if (files.length === 0 || loading) return;
     setLoading(true);
     setError(null);
     setMessage(null);
+    const failures: string[] = [];
+    let uploaded = 0;
     try {
-      const result = await adminApi.upload(kind, file);
-      setRows(r => [{ ...result, id: `${Date.now()}`, uploadedAt: new Date().toISOString() }, ...r]);
-      if (!lessonTitle.trim()) setLessonTitle(file.name.replace(/\.[^.]+$/, ""));
-      setMessage("Upload saved. Select a class/module and create a lesson.");
-    } catch (err) {
-      setError(uploadErrorMessage(err, file));
-    } finally { setLoading(false); }
+      for (let index = 0; index < files.length; index++) {
+        const file = files[index];
+        setUploadProgress(`${index + 1} / ${files.length}: ${file.name}`);
+        try {
+          await upload(file);
+          uploaded += 1;
+        } catch (err) {
+          failures.push(uploadErrorMessage(err, file));
+        }
+      }
+      if (uploaded > 0) {
+        setMessage(`${uploaded} file${uploaded === 1 ? "" : "s"} uploaded. Select a class/module and create lessons from the saved rows.`);
+      }
+      if (failures.length > 0) setError(failures.join(" "));
+    } finally {
+      setUploadProgress("");
+      setLoading(false);
+    }
   };
 
   const createLesson = async (row: Row) => {
@@ -178,13 +197,13 @@ export default function UploadsPage() {
         {!selectedCourse && <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 12 }}>Create or select a course with at least one class/module before creating lessons.</div>}
         {selectedCourse && modules.length === 0 && <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "end", padding: "12px 0", marginBottom: 12, borderTop: "1px solid var(--hairline)", borderBottom: "1px solid var(--hairline)" }}><label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>No class/module exists for this course</span><input className="input" value={newModuleTitle} onChange={e => setNewModuleTitle(e.target.value)} placeholder="Module 1" /></label><button className="btn btn-primary" disabled={creatingModule} onClick={createModule}><Plus size={13} /> {creatingModule ? "Creating..." : "Create module"}</button></div>}
         <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, border: "2px dashed var(--hairline)", borderRadius: 12, padding: "28px 20px", cursor: "pointer", textAlign: "center", background: "var(--bg-sunk)" }}>
-          <input type="file" accept={accept} style={{ display: "none" }} onChange={e => { const file = e.target.files?.[0]; if (file) upload(file); e.currentTarget.value = ""; }} />
+          <input type="file" accept={accept} multiple={kind !== "video"} disabled={loading} style={{ display: "none" }} onChange={e => { const files = Array.from(e.target.files ?? []); if (files.length > 0) uploadFiles(files); e.currentTarget.value = ""; }} />
           <Icon size={22} style={{ color: "var(--ndpc-blue)" }} />
-          <div style={{ fontSize: 13, fontWeight: 600 }}>{loading ? "Uploading..." : `Select ${kind} file`}</div>
-          <div style={{ fontSize: 11, color: "var(--ink-4)" }}>Backend validates kind and MIME type. Maximum upload size is 3GB.</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{loading ? `Uploading ${uploadProgress}` : `Select ${kind}${kind === "video" ? "" : " files"}`}</div>
+          <div style={{ fontSize: 11, color: "var(--ink-4)" }}>Backend validates kind and MIME type. PDF/material batches upload one file at a time. Maximum upload size is 3GB per file.</div>
         </label>
       </div>
-      <div className="card">{rows.length === 0 ? <EmptyState icon={Upload} title="No uploads in this session" description="Uploaded files will appear here with backend URLs and lesson defaults." /> : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>File</th><th>Kind</th><th>Size</th><th>URL</th><th>Lesson</th><th></th></tr></thead><tbody>{rows.map(r => <tr key={r.id}><td>{r.fileName}</td><td>{r.kind}</td><td>{Math.round(r.sizeBytes / 1024)} KB</td><td><a href={r.contentUrl} target="_blank" rel="noreferrer" className="id-mono">{r.contentUrl}</a></td><td>{r.lessonId ? <><StatusBadge value="active" label="created" /> <span className="id-mono">{r.lessonId}</span></> : <StatusBadge value="draft" label="not attached" />}</td><td><button className="btn btn-sm" disabled={Boolean(r.lessonId) || creatingId === r.id || !moduleId} onClick={() => createLesson(r)}><Plus size={12} /> {creatingId === r.id ? "Creating..." : "Create lesson"}</button></td></tr>)}</tbody></table></div>}</div>
+      <div className="card" style={{ minWidth: 0 }}>{rows.length === 0 ? <EmptyState icon={Upload} title="No uploads in this session" description="Uploaded files will appear here with backend URLs and lesson defaults." /> : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>File</th><th>Kind</th><th>Size</th><th>URL</th><th>Lesson</th><th></th></tr></thead><tbody>{rows.map(r => <tr key={r.id}><td>{r.fileName}</td><td>{r.kind}</td><td>{Math.round(r.sizeBytes / 1024)} KB</td><td style={{ maxWidth: 440 }}><a href={r.contentUrl} target="_blank" rel="noreferrer" className="id-mono" style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.contentUrl}</a></td><td>{r.lessonId ? <><StatusBadge value="active" label="created" /> <span className="id-mono">{r.lessonId}</span></> : <StatusBadge value="draft" label="not attached" />}</td><td><button className="btn btn-sm" disabled={Boolean(r.lessonId) || creatingId === r.id || !moduleId} onClick={() => createLesson(r)}><Plus size={12} /> {creatingId === r.id ? "Creating..." : "Create lesson"}</button></td></tr>)}</tbody></table></div>}</div>
     </div>
   );
 }

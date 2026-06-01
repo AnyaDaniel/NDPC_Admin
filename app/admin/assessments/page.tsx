@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/admin/ui/EmptyState";
 import { Modal } from "@/components/admin/ui/Modal";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
 
-const TYPES = ["preCourseTest", "moduleQuiz", "moduleExam", "finalExam"] as const;
+const TYPES = ["preCourseTest", "modulePreTest", "moduleQuiz", "moduleExam", "finalExam"] as const;
 const QUESTION_TYPES = ["multipleChoice", "trueFalse", "shortAnswer", "essay", "practical"] as const;
 type AssessmentType = typeof TYPES[number];
 type QuestionType = typeof QUESTION_TYPES[number];
@@ -37,10 +37,36 @@ function recordValue(record: Record<string, unknown>, ...aliases: string[]) {
 function normalizeAssessmentType(value: unknown): AssessmentType | null {
   const raw = compactKey(value);
   if (["precoursetest", "pretest", "coursepretest", "preassessment"].includes(raw)) return "preCourseTest";
+  if (["modulepretest", "modulepreassessment", "diagnostic", "modulediagnostic"].includes(raw)) return "modulePreTest";
   if (["modulequiz", "quiz", "practicequiz"].includes(raw)) return "moduleQuiz";
   if (["moduleexam", "moduletest", "test", "exam"].includes(raw)) return "moduleExam";
   if (["finalexam", "finaltest", "courseexam", "coursefinalexam"].includes(raw)) return "finalExam";
   return null;
+}
+
+function inferStandaloneAssessmentType(root: Record<string, unknown>): AssessmentType | null {
+  const explicit = normalizeAssessmentType(recordValue(root, "type", "assessmentType", "examType", "testType"));
+  if (explicit) return explicit;
+
+  const scope = compactKey(recordValue(root, "assessmentScope", "scope"));
+  const hint = compactKey([
+    recordValue(root, "assessmentScope", "scope", "purpose"),
+    recordValue(root, "assessmentId", "id"),
+    recordValue(root, "title", "name"),
+  ].filter(Boolean).join(" "));
+  if (scope.includes("module") && (hint.includes("pretest") || hint.includes("preassessment"))) return "modulePreTest";
+  if (hint.includes("modulepretest") || hint.includes("modulepreassessment")) return "modulePreTest";
+  if (hint.includes("finalexam") || hint.includes("finaltest")) return "finalExam";
+  if (hint.includes("precoursetest") || hint.includes("pretest")) return "preCourseTest";
+  if (scope.includes("module") && (hint.includes("exam") || hint.includes("test"))) return "moduleExam";
+  if (hint.includes("moduleexam") || hint.includes("moduletest") || hint.includes("exam")) return "moduleExam";
+  if (hint.includes("modulequiz") || hint.includes("quiz")) return "moduleQuiz";
+  return null;
+}
+
+function moduleNumber(value: unknown) {
+  const match = String(value ?? "").match(/(?:module|^m)\s*[_-]?\s*(\d+)/i);
+  return match?.[1] ?? "";
 }
 
 function assessmentRowsFromJson(raw: unknown) {
@@ -75,6 +101,7 @@ function assessmentRowsFromJson(raw: unknown) {
   add(recordValue(root, "preCourseTest", "preTest", "coursePreTest", "preAssessment"), "preCourseTest");
   add(recordValue(root, "finalExam", "finalTest", "courseFinalExam", "courseExam"), "finalExam");
   add(recordValue(root, "moduleQuizzes"), "moduleQuiz");
+  add(recordValue(root, "modulePreTests", "modulePreAssessments"), "modulePreTest");
   add(recordValue(root, "moduleExams", "moduleTests"), "moduleExam");
 
   const moduleDefinitions = recordValue(root, "modules");
@@ -86,13 +113,14 @@ function assessmentRowsFromJson(raw: unknown) {
         moduleId: recordValue(module, "moduleId", "id"),
         moduleTitle: recordValue(module, "moduleTitle", "title", "name"),
       };
+      add(recordValue(module, "modulePreTest", "preTest", "preAssessment", "diagnostic"), "modulePreTest", extra);
       add(recordValue(module, "moduleQuiz", "quiz", "practiceQuiz"), "moduleQuiz", extra);
       add(recordValue(module, "moduleExam", "moduleTest", "exam", "test"), "moduleExam", extra);
     });
   }
 
   if (rows.length === 0) {
-    const type = normalizeAssessmentType(recordValue(root, "type", "assessmentType", "examType", "testType"));
+    const type = inferStandaloneAssessmentType(root);
     if (type) rows.push({ ...root, type });
   }
   return rows;
@@ -166,7 +194,7 @@ export default function AssessmentsPage() {
   const saveAssessment = async () => {
     if (!courseId) return;
     const type = assessmentForm.type;
-    const moduleScoped = type === "moduleQuiz" || type === "moduleExam";
+    const moduleScoped = type === "modulePreTest" || type === "moduleQuiz" || type === "moduleExam";
     await adminApi.createAssessment({
       courseId,
       moduleId: moduleScoped ? moduleId : undefined,
@@ -259,14 +287,19 @@ export default function AssessmentsPage() {
       for (const row of rows) {
         const type = normalizeAssessmentType(row.type);
         if (!type || !TYPES.includes(type)) throw new Error(`Unsupported assessment type: ${String(row.type ?? "(missing)")}`);
-        const moduleScoped = type === "moduleQuiz" || type === "moduleExam";
+        const moduleScoped = type === "modulePreTest" || type === "moduleQuiz" || type === "moduleExam";
         const requestedModuleId = String(row.moduleId ?? "").trim();
         const requestedModuleTitle = String(row.moduleTitle ?? row.moduleName ?? "").trim().toLowerCase();
+        const requestedModuleNumber = moduleNumber(row.moduleId ?? row.moduleTitle ?? row.assessmentId ?? row.title);
         const matchedModule = moduleScoped
-          ? modules.find(module => module.id === requestedModuleId || module.title.trim().toLowerCase() === requestedModuleTitle)
+          ? modules.find(module =>
+              module.id === requestedModuleId ||
+              module.title.trim().toLowerCase() === requestedModuleTitle ||
+              (requestedModuleNumber && moduleNumber(module.title) === requestedModuleNumber) ||
+              (moduleId && module.id === moduleId))
           : undefined;
         if (moduleScoped && !matchedModule) {
-          throw new Error(`${type} requires a matching moduleId or moduleTitle in the selected course.`);
+          throw new Error(`${type} requires a matching class/module. Select the module filter first, or include moduleId/moduleTitle in the JSON.`);
         }
 
         const created = await adminApi.createAssessment({
@@ -353,13 +386,13 @@ export default function AssessmentsPage() {
         <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Module filter</span><select className="input" value={moduleId} onChange={e => { setModuleId(e.target.value); setSelectedAssessmentId(""); }}><option value="">All course assessments</option>{modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}</select></label>
       </div>
       {error && <div className="card" style={{ padding: 14, color: "var(--ndpc-red)", marginBottom: 16 }}>{error}</div>}
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(420px, 0.9fr) 1.1fr", gap: 16, alignItems: "start" }}>
-        <div className="card">
-          {loading ? <EmptyState icon={RefreshCw} title="Loading assessments" /> : assessments.length === 0 ? <EmptyState icon={HelpCircle} title="No assessments found" description="Create a test or exam for this course/module." /> : <table className="tbl"><thead><tr><th>Assessment</th><th>Type</th><th>Pass</th><th></th></tr></thead><tbody>{assessments.map(a => <tr key={a.id} onClick={() => setSelectedAssessmentId(a.id)} style={{ cursor: "pointer", background: selectedAssessmentId === a.id ? "var(--selected)" : undefined }}><td><div style={{ fontWeight: 500 }}>{a.title}</div><div className="id-mono">{a.module?.title ?? a.course?.title ?? a.id}</div></td><td><StatusBadge value="active" label={a.type} /></td><td>{a.passingScore}%</td><td><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={e => { e.stopPropagation(); removeAssessment(a); }}><Trash2 size={13} /></button></td></tr>)}</tbody></table>}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.9fr) minmax(0, 1.1fr)", gap: 16, alignItems: "start" }}>
+        <div className="card" style={{ minWidth: 0 }}>
+          {loading ? <EmptyState icon={RefreshCw} title="Loading assessments" /> : assessments.length === 0 ? <EmptyState icon={HelpCircle} title="No assessments found" description="Create a test or exam for this course/module." /> : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Assessment</th><th>Type</th><th>Pass</th><th></th></tr></thead><tbody>{assessments.map(a => <tr key={a.id} onClick={() => setSelectedAssessmentId(a.id)} style={{ cursor: "pointer", background: selectedAssessmentId === a.id ? "var(--selected)" : undefined }}><td><div style={{ fontWeight: 500, overflowWrap: "anywhere" }}>{a.title}</div><div className="id-mono">{a.module?.title ?? a.course?.title ?? a.id}</div></td><td><StatusBadge value="active" label={a.type} /></td><td>{a.passingScore}%</td><td><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={e => { e.stopPropagation(); removeAssessment(a); }}><Trash2 size={13} /></button></td></tr>)}</tbody></table></div>}
         </div>
-        <div className="card">
-          <div className="flex items-center justify-between" style={{ padding: 14, borderBottom: "1px solid var(--line)" }}><div><div style={{ fontWeight: 600 }}>{selectedAssessment?.title ?? "Select an assessment"}</div><div style={{ color: "var(--ink-3)", fontSize: 12 }}>{questions.length} questions</div></div><div className="flex gap-2"><label className={`btn ${!selectedAssessmentId ? "btn-disabled" : ""}`}><Upload size={14} /> Import JSON<input type="file" accept="application/json,.json" disabled={!selectedAssessmentId} style={{ display: "none" }} onChange={e => { const file = e.target.files?.[0]; if (file) importQuestionsJson(file); e.currentTarget.value = ""; }} /></label><button className="btn btn-primary" disabled={!selectedAssessmentId} onClick={() => setShowQuestion(true)}><Plus size={14} /> Add question</button></div></div>
-          {!selectedAssessmentId ? <EmptyState title="No assessment selected" /> : questions.length === 0 ? <EmptyState title="No questions yet" /> : <table className="tbl"><thead><tr><th>Question</th><th>Type</th><th>Pts</th><th></th></tr></thead><tbody>{questions.map(q => <tr key={q.id}><td style={{ whiteSpace: "normal" }}>{q.questionText}</td><td>{q.questionType}</td><td>{q.points}</td><td><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={() => removeQuestion(q)}><Trash2 size={13} /></button></td></tr>)}</tbody></table>}
+        <div className="card" style={{ minWidth: 0 }}>
+          <div className="flex items-center justify-between gap-2" style={{ padding: 14, borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}><div style={{ minWidth: 0, flex: "1 1 240px" }}><div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{selectedAssessment?.title ?? "Select an assessment"}</div><div style={{ color: "var(--ink-3)", fontSize: 12 }}>{questions.length} questions</div></div><div className="flex gap-2" style={{ flexWrap: "wrap" }}><label className={`btn ${!selectedAssessmentId ? "btn-disabled" : ""}`}><Upload size={14} /> Import JSON<input type="file" accept="application/json,.json" disabled={!selectedAssessmentId} style={{ display: "none" }} onChange={e => { const file = e.target.files?.[0]; if (file) importQuestionsJson(file); e.currentTarget.value = ""; }} /></label><button className="btn btn-primary" disabled={!selectedAssessmentId} onClick={() => setShowQuestion(true)}><Plus size={14} /> Add question</button></div></div>
+          {!selectedAssessmentId ? <EmptyState title="No assessment selected" /> : questions.length === 0 ? <EmptyState title="No questions yet" /> : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Question</th><th>Type</th><th>Pts</th><th></th></tr></thead><tbody>{questions.map(q => <tr key={q.id}><td style={{ whiteSpace: "normal" }}>{q.questionText}</td><td>{q.questionType}</td><td>{q.points}</td><td><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={() => removeQuestion(q)}><Trash2 size={13} /></button></td></tr>)}</tbody></table></div>}
         </div>
       </div>
       <Modal open={showAssessment} onClose={() => setShowAssessment(false)} title="New assessment" footer={<><button className="btn" onClick={() => setShowAssessment(false)}>Cancel</button><button className="btn btn-primary" disabled={!assessmentForm.title.trim()} onClick={saveAssessment}>Create</button></>}>

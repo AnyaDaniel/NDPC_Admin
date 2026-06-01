@@ -26,7 +26,7 @@ export type AdminAssessment = {
   moduleId?: string | null;
   title: string;
   description?: string | null;
-  type: "preCourseTest" | "moduleQuiz" | "moduleExam" | "finalExam" | string;
+  type: "preCourseTest" | "modulePreTest" | "moduleQuiz" | "moduleExam" | "finalExam" | string;
   timeLimitMinutes?: number | null;
   passingScore: number;
   allowRetake: boolean;
@@ -306,14 +306,27 @@ export const adminApi = {
     });
 
     const text = await response.text();
-    const envelope = text
-      ? JSON.parse(text) as {
+    let envelope: {
+      success?: boolean;
+      message?: string;
+      data?: UploadResult;
+      error?: { code?: string; message?: string; details?: unknown };
+    } | null = null;
+    try {
+      envelope = text
+        ? JSON.parse(text) as {
           success?: boolean;
           message?: string;
           data?: UploadResult;
           error?: { code?: string; message?: string; details?: unknown };
         }
-      : null;
+        : null;
+    } catch {
+      throw new ApiError(
+        response.ok ? "Upload response was not valid JSON." : `Upload failed with HTTP ${response.status}.`,
+        response.status
+      );
+    }
 
     if (!response.ok || envelope?.success === false) {
       throw new ApiError(
