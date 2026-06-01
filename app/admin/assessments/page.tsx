@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { HelpCircle, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, HelpCircle, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 import { adminApi, AdminAssessment, AdminCourse, AdminModule, AdminQuestion } from "@/lib/admin-api";
 import { EmptyState } from "@/components/admin/ui/EmptyState";
 import { Modal } from "@/components/admin/ui/Modal";
@@ -10,6 +10,7 @@ const TYPES = ["preCourseTest", "modulePreTest", "moduleQuiz", "moduleExam", "fi
 const QUESTION_TYPES = ["multipleChoice", "trueFalse", "shortAnswer", "essay", "practical"] as const;
 type AssessmentType = typeof TYPES[number];
 type QuestionType = typeof QUESTION_TYPES[number];
+type ImportPreview = { fileName: string; rows: Record<string, unknown>[] };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -69,6 +70,22 @@ function moduleNumber(value: unknown) {
   return match?.[1] ?? "";
 }
 
+function assessmentTypeLabel(type: string) {
+  if (type === "preCourseTest") return "Course Pre-Test";
+  if (type === "modulePreTest") return "Module Pre-Test";
+  if (type === "moduleQuiz") return "Module Quiz";
+  if (type === "moduleExam") return "Module Exam";
+  if (type === "finalExam") return "Final Exam";
+  return type;
+}
+
+function requiredQuestionCount(type: string) {
+  if (type === "preCourseTest" || type === "modulePreTest") return 4;
+  if (type === "moduleQuiz" || type === "moduleExam") return 8;
+  if (type === "finalExam") return 20;
+  return 1;
+}
+
 function assessmentRowsFromJson(raw: unknown) {
   if (Array.isArray(raw)) return raw.map(asRecord).filter(Boolean) as Record<string, unknown>[];
   const root = asRecord(raw);
@@ -98,11 +115,21 @@ function assessmentRowsFromJson(raw: unknown) {
   addCollection(recordValue(root, "assessments"));
   addCollection(recordValue(root, "tests"));
   addCollection(recordValue(root, "exams"));
-  add(recordValue(root, "preCourseTest", "preTest", "coursePreTest", "preAssessment"), "preCourseTest");
+  const rootModuleNumber = recordValue(root, "moduleNumber");
+  const rootModuleId = recordValue(root, "moduleId");
+  const isModuleBundle = Boolean(rootModuleId || rootModuleNumber);
+  const rootModuleExtra = isModuleBundle ? {
+    moduleId: rootModuleId,
+    moduleTitle: recordValue(root, "moduleTitle", "title", "name"),
+  } : {};
+  add(recordValue(root, "preCourseTest", "coursePreTest"), "preCourseTest");
+  add(recordValue(root, "preTest", "preAssessment"), isModuleBundle ? "modulePreTest" : "preCourseTest", rootModuleExtra);
   add(recordValue(root, "finalExam", "finalTest", "courseFinalExam", "courseExam"), "finalExam");
   add(recordValue(root, "moduleQuizzes"), "moduleQuiz");
   add(recordValue(root, "modulePreTests", "modulePreAssessments"), "modulePreTest");
   add(recordValue(root, "moduleExams", "moduleTests"), "moduleExam");
+  add(recordValue(root, "moduleQuiz", "practiceQuiz"), "moduleQuiz", rootModuleExtra);
+  add(recordValue(root, "moduleExam", "moduleTest"), "moduleExam", rootModuleExtra);
 
   const moduleDefinitions = recordValue(root, "modules");
   if (Array.isArray(moduleDefinitions)) {
@@ -137,6 +164,8 @@ export default function AssessmentsPage() {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [showAssessment, setShowAssessment] = useState(false);
   const [showQuestion, setShowQuestion] = useState(false);
   const [assessmentForm, setAssessmentForm] = useState({ title: "", type: "moduleQuiz", passingScore: 70, timeLimitMinutes: 30, maxAttempts: 3 });
@@ -272,19 +301,29 @@ export default function AssessmentsPage() {
     }
   };
 
-  const importAssessmentBundleJson = async (file: File) => {
-    if (!courseId) return;
-    setImporting(true);
+  const reviewAssessmentBundleJson = async (file: File) => {
     setError(null);
     try {
       const rows = assessmentRowsFromJson(JSON.parse(await file.text()));
       if (rows.length === 0) {
         throw new Error("No assessment definitions found. For a full bundle, include assessments, preTest/preCourseTest, finalExam, or module quiz/exam definitions. For a question-only file, first select an assessment and use its Import JSON button.");
       }
+      setImportPreview({ fileName: file.name, rows });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to read assessment JSON");
+    }
+  };
 
+  const submitAssessmentBundle = async () => {
+    if (!courseId || !importPreview) return;
+    if (!courseId) return;
+    setImporting(true);
+    setError(null);
+    setMessage(null);
+    try {
       let createdCount = 0;
       let questionCount = 0;
-      for (const row of rows) {
+      for (const row of importPreview.rows) {
         const type = normalizeAssessmentType(row.type);
         if (!type || !TYPES.includes(type)) throw new Error(`Unsupported assessment type: ${String(row.type ?? "(missing)")}`);
         const moduleScoped = type === "modulePreTest" || type === "moduleQuiz" || type === "moduleExam";
@@ -351,7 +390,8 @@ export default function AssessmentsPage() {
 
       await loadAssessments();
       setError(null);
-      alert(`Imported ${createdCount} assessments and ${questionCount} questions.`);
+      setImportPreview(null);
+      setMessage(`Stored in backend: ${createdCount} assessment${createdCount === 1 ? "" : "s"} and ${questionCount} question${questionCount === 1 ? "" : "s"}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to import assessment JSON");
     } finally {
@@ -371,6 +411,20 @@ export default function AssessmentsPage() {
     setQuestions(items => items.filter(item => item.id !== question.id));
   };
 
+  const renderAssessmentGroup = (title: string, types: string[]) => {
+    const rows = assessments.filter(assessment => types.includes(assessment.type));
+    if (rows.length === 0) return null;
+    return <div>
+      <div style={{ padding: "10px 14px", color: "var(--ink-3)", fontFamily: "var(--font-geist-mono)", fontSize: 10.5, textTransform: "uppercase", borderBottom: "1px solid var(--hairline)" }}>{title}</div>
+      <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Assessment</th><th>Stage</th><th>Questions</th><th>Status</th><th></th></tr></thead><tbody>{rows.map(a => {
+        const questionCount = a.questions?.length ?? 0;
+        const minimum = requiredQuestionCount(a.type);
+        const ready = questionCount >= minimum;
+        return <tr key={a.id} onClick={() => setSelectedAssessmentId(a.id)} style={{ cursor: "pointer", background: selectedAssessmentId === a.id ? "var(--selected)" : undefined }}><td><div style={{ fontWeight: 500, overflowWrap: "anywhere" }}>{a.title}</div><div className="id-mono">{a.module?.title ?? a.course?.title ?? a.id}</div></td><td><StatusBadge value="active" label={assessmentTypeLabel(a.type)} /></td><td>{questionCount} / {minimum}</td><td><StatusBadge value={ready ? "active" : "draft"} label={ready ? "learner ready" : "needs questions"} /></td><td><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={e => { e.stopPropagation(); removeAssessment(a); }}><Trash2 size={13} /></button></td></tr>;
+      })}</tbody></table></div>
+    </div>;
+  };
+
   return (
     <div style={{ padding: "var(--density-page-pad)", maxWidth: 1480, margin: "0 auto" }}>
       <div className="flex items-end justify-between gap-4 mb-5">
@@ -379,16 +433,17 @@ export default function AssessmentsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Tests & Exams</h1>
           <p style={{ color: "var(--ink-3)", marginTop: 4, fontSize: 13.5 }}>Create pre-course tests, module quizzes/exams, final exams, and questions.</p>
         </div>
-        <div className="flex gap-2"><button className="btn" onClick={reload}><RefreshCw size={14} /> Refresh</button><label className={`btn ${!courseId || importing ? "btn-disabled" : ""}`}><Upload size={14} /> {importing ? "Importing..." : "Import assessment JSON"}<input type="file" accept="application/json,.json" disabled={!courseId || importing} style={{ display: "none" }} onChange={e => { const file = e.target.files?.[0]; if (file) importAssessmentBundleJson(file); e.currentTarget.value = ""; }} /></label><button className="btn btn-primary" onClick={() => setShowAssessment(true)} disabled={!courseId}><Plus size={14} /> New assessment</button></div>
+        <div className="flex gap-2"><button className="btn" onClick={reload}><RefreshCw size={14} /> Refresh</button><label className={`btn ${!courseId || importing ? "btn-disabled" : ""}`}><Upload size={14} /> Review assessment JSON<input type="file" accept="application/json,.json" disabled={!courseId || importing} style={{ display: "none" }} onChange={e => { const file = e.target.files?.[0]; if (file) reviewAssessmentBundleJson(file); e.currentTarget.value = ""; }} /></label><button className="btn btn-primary" onClick={() => setShowAssessment(true)} disabled={!courseId}><Plus size={14} /> New assessment</button></div>
       </div>
       <div className="card" style={{ padding: 14, marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Course</span><select className="input" value={courseId} onChange={e => { setCourseId(e.target.value); setModuleId(""); setSelectedAssessmentId(""); }}>{courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</select></label>
         <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Module filter</span><select className="input" value={moduleId} onChange={e => { setModuleId(e.target.value); setSelectedAssessmentId(""); }}><option value="">All course assessments</option>{modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}</select></label>
       </div>
       {error && <div className="card" style={{ padding: 14, color: "var(--ndpc-red)", marginBottom: 16 }}>{error}</div>}
+      {message && <div className="card" style={{ padding: 14, color: "var(--ndpc-green)", marginBottom: 16 }}><CheckCircle2 size={15} style={{ display: "inline", marginRight: 8 }} />{message}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.9fr) minmax(0, 1.1fr)", gap: 16, alignItems: "start" }}>
         <div className="card" style={{ minWidth: 0 }}>
-          {loading ? <EmptyState icon={RefreshCw} title="Loading assessments" /> : assessments.length === 0 ? <EmptyState icon={HelpCircle} title="No assessments found" description="Create a test or exam for this course/module." /> : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Assessment</th><th>Type</th><th>Pass</th><th></th></tr></thead><tbody>{assessments.map(a => <tr key={a.id} onClick={() => setSelectedAssessmentId(a.id)} style={{ cursor: "pointer", background: selectedAssessmentId === a.id ? "var(--selected)" : undefined }}><td><div style={{ fontWeight: 500, overflowWrap: "anywhere" }}>{a.title}</div><div className="id-mono">{a.module?.title ?? a.course?.title ?? a.id}</div></td><td><StatusBadge value="active" label={a.type} /></td><td>{a.passingScore}%</td><td><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={e => { e.stopPropagation(); removeAssessment(a); }}><Trash2 size={13} /></button></td></tr>)}</tbody></table></div>}
+          {loading ? <EmptyState icon={RefreshCw} title="Loading assessments" /> : assessments.length === 0 ? <EmptyState icon={HelpCircle} title="No assessments found" description="Create a test or exam for this course/module." /> : <>{renderAssessmentGroup("Pre-tests", ["preCourseTest", "modulePreTest"])}{renderAssessmentGroup("Module assessments", ["moduleQuiz", "moduleExam"])}{renderAssessmentGroup("Final exams", ["finalExam"])}</>}
         </div>
         <div className="card" style={{ minWidth: 0 }}>
           <div className="flex items-center justify-between gap-2" style={{ padding: 14, borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}><div style={{ minWidth: 0, flex: "1 1 240px" }}><div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{selectedAssessment?.title ?? "Select an assessment"}</div><div style={{ color: "var(--ink-3)", fontSize: 12 }}>{questions.length} questions</div></div><div className="flex gap-2" style={{ flexWrap: "wrap" }}><label className={`btn ${!selectedAssessmentId ? "btn-disabled" : ""}`}><Upload size={14} /> Import JSON<input type="file" accept="application/json,.json" disabled={!selectedAssessmentId} style={{ display: "none" }} onChange={e => { const file = e.target.files?.[0]; if (file) importQuestionsJson(file); e.currentTarget.value = ""; }} /></label><button className="btn btn-primary" disabled={!selectedAssessmentId} onClick={() => setShowQuestion(true)}><Plus size={14} /> Add question</button></div></div>
@@ -397,6 +452,16 @@ export default function AssessmentsPage() {
       </div>
       <Modal open={showAssessment} onClose={() => setShowAssessment(false)} title="New assessment" footer={<><button className="btn" onClick={() => setShowAssessment(false)}>Cancel</button><button className="btn btn-primary" disabled={!assessmentForm.title.trim()} onClick={saveAssessment}>Create</button></>}>
         <div style={{ display: "grid", gap: 12 }}><input className="input" placeholder="Assessment title" value={assessmentForm.title} onChange={e => setAssessmentForm(v => ({ ...v, title: e.target.value }))} /><select className="input" value={assessmentForm.type} onChange={e => setAssessmentForm(v => ({ ...v, type: e.target.value }))}>{TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}><input className="input" type="number" value={70} disabled title="Passing score is fixed at 70%" /><input className="input" type="number" value={assessmentForm.timeLimitMinutes} onChange={e => setAssessmentForm(v => ({ ...v, timeLimitMinutes: Number(e.target.value) }))} /><input className="input" type="number" value={assessmentForm.maxAttempts} onChange={e => setAssessmentForm(v => ({ ...v, maxAttempts: Number(e.target.value) }))} /></div></div>
+      </Modal>
+      <Modal open={Boolean(importPreview)} onClose={() => !importing && setImportPreview(null)} title="Review assessment import" size="lg" footer={<><button className="btn" disabled={importing} onClick={() => setImportPreview(null)}>Cancel</button><button className="btn btn-primary" disabled={importing} onClick={submitAssessmentBundle}><Upload size={14} /> {importing ? "Submitting..." : "Submit to backend"}</button></>}>
+        <div style={{ color: "var(--ink-3)", fontSize: 12.5, marginBottom: 12 }}>{importPreview?.fileName}</div>
+        <div style={{ overflowX: "auto", border: "1px solid var(--hairline)", borderRadius: 8 }}><table className="tbl"><thead><tr><th>Assessment</th><th>Stored as</th><th>Module</th><th>Questions</th><th>Required</th></tr></thead><tbody>{importPreview?.rows.map((row, index) => {
+          const type = normalizeAssessmentType(row.type) ?? "moduleExam";
+          const requestedModuleNumber = moduleNumber(row.moduleId ?? row.moduleTitle ?? row.assessmentId ?? row.title);
+          const matchedModule = modules.find(module => module.id === String(row.moduleId ?? "") || (requestedModuleNumber && moduleNumber(module.title) === requestedModuleNumber) || (moduleId && module.id === moduleId));
+          const count = Array.isArray(row.questions) ? row.questions.length : Array.isArray(row.items) ? row.items.length : 0;
+          return <tr key={`${String(row.title ?? type)}-${index}`}><td>{String(row.title ?? row.name ?? type)}</td><td><StatusBadge value="active" label={assessmentTypeLabel(type)} /></td><td>{matchedModule?.title ?? (type === "preCourseTest" || type === "finalExam" ? "Course level" : "Select module filter")}</td><td>{count}</td><td>{requiredQuestionCount(type)}</td></tr>;
+        })}</tbody></table></div>
       </Modal>
       <Modal open={showQuestion} onClose={() => setShowQuestion(false)} title="New question" footer={<><button className="btn" onClick={() => setShowQuestion(false)}>Cancel</button><button className="btn btn-primary" disabled={!questionForm.questionText.trim()} onClick={saveQuestion}>Create</button></>}>
         <div style={{ display: "grid", gap: 12 }}><textarea className="input" rows={3} placeholder="Question text" value={questionForm.questionText} onChange={e => setQuestionForm(v => ({ ...v, questionText: e.target.value }))} /><select className="input" value={questionForm.questionType} onChange={e => setQuestionForm(v => ({ ...v, questionType: e.target.value }))}>{QUESTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>{questionForm.questionType === "multipleChoice" && <textarea className="input" rows={4} value={questionForm.options} onChange={e => setQuestionForm(v => ({ ...v, options: e.target.value }))} />}<input className="input" placeholder="Correct answer" value={questionForm.correctAnswer} onChange={e => setQuestionForm(v => ({ ...v, correctAnswer: e.target.value }))} /><input className="input" type="number" min={1} value={questionForm.points} onChange={e => setQuestionForm(v => ({ ...v, points: Number(e.target.value) }))} /><label className="flex items-center gap-2" style={{ fontSize: 13 }}><input type="checkbox" checked={questionForm.requiresAiGrading} onChange={e => setQuestionForm(v => ({ ...v, requiresAiGrading: e.target.checked }))} /> Requires AI/manual grading</label></div>
