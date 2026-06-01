@@ -83,14 +83,14 @@ export default function SettingsPage() {
               <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>Admin Profile</h2>
               <div className="flex items-center gap-4">
                 <Avatar name="Harrison Oloye" size="lg" />
-                <button className="btn btn-sm">Change photo</button>
+                <button className="btn btn-sm" disabled title="Profile updates backend pending">Change photo</button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 {[["Full name", "Harrison Oloye"], ["Email", "h.oloye@ndpc.ng"], ["Role", "Super Admin"], ["Department", "Technology"]].map(([l, v]) => (
                   <div key={l}><label style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>{l}</label><input className="input" defaultValue={v} /></div>
                 ))}
               </div>
-              <div className="flex justify-end"><button className="btn btn-primary"><Save size={14} /> Save changes</button></div>
+              <div className="flex justify-end"><button className="btn btn-primary" disabled title="Profile updates backend pending"><Save size={14} /> Save changes</button></div>
             </div>
           )}
 
@@ -111,7 +111,7 @@ export default function SettingsPage() {
               <div style={{ padding: 12, borderRadius: 8, background: "var(--bg-sunk)", fontSize: 12.5, color: "var(--ink-3)" }}>
                 Password must be at least 12 characters and include uppercase, lowercase, numbers and special characters.
               </div>
-              <div className="flex justify-end"><button className="btn btn-primary"><Save size={14} /> Update password</button></div>
+              <div className="flex justify-end"><button className="btn btn-primary" disabled title="Password updates backend pending"><Save size={14} /> Update password</button></div>
             </div>
           )}
 
@@ -193,7 +193,7 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-2 mb-2"><Shield size={18} style={{ color: "var(--ndpc-amber)" }} /><span style={{ fontWeight: 600 }}>2FA is not yet enabled</span></div>
                 <p style={{ fontSize: 13, color: "var(--ink-3)", margin: 0 }}>Enable authenticator app, SMS or hardware key for additional sign-in security. {/* TODO: wire to backend 2FA endpoint */}</p>
               </div>
-              <button className="btn btn-primary w-fit"><Shield size={14} /> Set up 2FA</button>
+              <button className="btn btn-primary w-fit" disabled title="2FA backend pending"><Shield size={14} /> Set up 2FA</button>
               <div style={{ fontSize: 12, color: "var(--ink-3)", fontFamily: "var(--font-geist-mono)" }}>TODO: Integrate TOTP / SMS 2FA</div>
             </div>
           )}
@@ -213,7 +213,7 @@ export default function SettingsPage() {
                       <div style={{ fontSize: 12, color: "var(--ink-3)", fontFamily: "var(--font-geist-mono)" }}>{s.ip} · {s.location} · {s.time}</div>
                     </div>
                   </div>
-                  {!s.current && <button className="btn btn-sm btn-danger"><Trash2 size={12} /> Revoke</button>}
+                  {!s.current && <button className="btn btn-sm btn-danger" disabled title="Session revocation backend pending"><Trash2 size={12} /> Revoke</button>}
                 </div>
               ))}
             </div>

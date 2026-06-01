@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Smartphone, KeyRound, BookOpen, Upload,
   Award, CreditCard, SubscriptIcon, ShieldAlert, RefreshCw, Settings,
-  FileText, TrendingUp, ChevronDown, UserCog, HelpCircle,
+  FileText, TrendingUp, UserCog, HelpCircle,
 } from "lucide-react";
 
 const NAV = [
@@ -13,11 +13,11 @@ const NAV = [
     { href: "/admin/study-tracker",label: "Study Tracker",      icon: TrendingUp },
   ]},
   { section: "People", items: [
-    { href: "/admin/users",        label: "User Management",    icon: Users,        count: 12 },
-    { href: "/admin/devices",      label: "Device Monitoring",  icon: Smartphone,   count: 12 },
+    { href: "/admin/users",        label: "User Management",    icon: Users },
+    { href: "/admin/devices",      label: "Device Monitoring",  icon: Smartphone },
   ]},
   { section: "Commerce", items: [
-    { href: "/admin/subscriptions",label: "Subscriptions",      icon: SubscriptIcon, count: 10 },
+    { href: "/admin/subscriptions",label: "Subscriptions",      icon: SubscriptIcon },
     { href: "/admin/payments",     label: "Payments",           icon: CreditCard },
     { href: "/admin/activation-codes", label: "Activation Codes", icon: KeyRound },
   ]},
@@ -73,11 +73,6 @@ export function Sidebar() {
                   <Link key={item.href} href={item.href} className={`sb-item ${active ? "active" : ""}`}>
                     <Icon size={17} style={{ opacity: 0.85, flexShrink: 0 }} />
                     <span style={{ flex: 1 }}>{item.label}</span>
-                    {item.count !== undefined && (
-                      <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 10.5, color: "var(--ink-3)", background: "var(--bg-sunk)", padding: "1px 6px", borderRadius: 999, border: "1px solid var(--hairline)" }}>
-                        {item.count}
-                      </span>
-                    )}
                   </Link>
                 );
               })}
@@ -87,14 +82,14 @@ export function Sidebar() {
 
         {/* Footer */}
         <div style={{ borderTop: "1px dashed var(--hairline)", paddingTop: 10 }}>
-          <button className="flex items-center gap-2.5 w-full rounded-lg hover:bg-[var(--hover)]" style={{ padding: "8px 8px" }}>
+          <Link href="/admin/settings" className="flex items-center gap-2.5 w-full rounded-lg hover:bg-[var(--hover)]" style={{ padding: "8px 8px" }}>
             <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, var(--ndpc-blue), var(--ndpc-blue-2))", color: "white", display: "grid", placeItems: "center", fontWeight: 600, fontSize: 11 }}>HO</div>
             <div className="flex flex-col items-start flex-1 min-w-0">
               <div style={{ fontSize: 12.5, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Harrison Oloye</div>
               <div style={{ fontFamily: "var(--font-geist-mono)", fontSize: 10, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>super admin</div>
             </div>
-            <ChevronDown size={14} style={{ color: "var(--ink-3)" }} />
-          </button>
+            <Settings size={14} style={{ color: "var(--ink-3)" }} />
+          </Link>
         </div>
       </div>
     </aside>

@@ -1,7 +1,8 @@
 ﻿"use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { LogIn } from "lucide-react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { ChevronDown, LogIn, LogOut, Settings } from "lucide-react";
 import { adminApi } from "@/lib/admin-api";
 import { clearAdminSession, getAccessToken, getAdminUser } from "@/lib/api-client";
 
@@ -67,19 +68,44 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
 export function AdminSessionMenu() {
   const [user, setUser] = useState<AdminUser | null>(null);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => setUser(getAdminUser<AdminUser>()), []);
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
   const label = user?.name || user?.email || "Admin";
   return (
-    <button
-      className="flex items-center gap-2.5"
-      onClick={() => { clearAdminSession(); window.location.reload(); }}
-      title="Sign out"
-      style={{ padding: "4px 8px 4px 4px", borderRadius: 999, border: "1px solid var(--line)", background: "var(--bg-elev)" }}
-    >
-      <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, var(--ndpc-blue), var(--ndpc-blue-2))", color: "white", display: "grid", placeItems: "center", fontWeight: 600, fontSize: 11 }}>
-        {label.slice(0, 1).toUpperCase()}
-      </div>
-      <span style={{ fontSize: 12.5, fontWeight: 500 }}>{label}</span>
-    </button>
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        className="flex items-center gap-2.5"
+        onClick={() => setOpen(value => !value)}
+        aria-expanded={open}
+        title="Open admin menu"
+        style={{ padding: "4px 8px 4px 4px", borderRadius: 999, border: "1px solid var(--line)", background: "var(--bg-elev)" }}
+      >
+        <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, var(--ndpc-blue), var(--ndpc-blue-2))", color: "white", display: "grid", placeItems: "center", fontWeight: 600, fontSize: 11 }}>
+          {label.slice(0, 1).toUpperCase()}
+        </div>
+        <span style={{ fontSize: 12.5, fontWeight: 500 }}>{label}</span>
+        <ChevronDown size={13} />
+      </button>
+      {open && (
+        <div className="card" style={{ position: "absolute", zIndex: 30, right: 0, top: 42, minWidth: 190, padding: 6 }}>
+          <Link className="sb-item" href="/admin/settings" onClick={() => setOpen(false)}><Settings size={14} /> Settings</Link>
+          <button
+            className="sb-item"
+            style={{ width: "100%", color: "var(--ndpc-red)" }}
+            onClick={() => { clearAdminSession(); window.location.reload(); }}
+          >
+            <LogOut size={14} /> Sign out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 ﻿"use client";
 import { Search, Bell, Moon, Sun } from "lucide-react";
 import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { AdminSessionMenu } from "@/components/admin/layout/AuthGate";
 import { AdminTheme, applyAppearance, readDensity, readTheme } from "@/lib/appearance";
@@ -25,6 +26,7 @@ const CRUMBS: Record<string, [string, string]> = {
 
 export function Topbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [theme, setTheme] = useState<AdminTheme>("light");
   const crumb = CRUMBS[pathname] ?? ["Admin", pathname.split("/").pop() ?? ""];
 
@@ -56,7 +58,7 @@ export function Topbar() {
           <span style={{ color: "var(--ink)", fontWeight: 500 }}>{crumb[1]}</span>
         </div>
         <div className="flex-1" />
-        <button className="flex items-center gap-2 hd-search" style={{ minWidth: 260, padding: "0 10px", height: 34, border: "1px solid var(--line)", borderRadius: 8, background: "var(--bg-sunk)", color: "var(--ink-3)", fontSize: 13 }}>
+        <button onClick={() => router.push("/admin/users")} className="flex items-center gap-2 hd-search" title="Search users" style={{ minWidth: 260, padding: "0 10px", height: 34, border: "1px solid var(--line)", borderRadius: 8, background: "var(--bg-sunk)", color: "var(--ink-3)", fontSize: 13 }}>
           <Search size={14} />
           <span style={{ flex: 1, textAlign: "left" }}>Search users, payments, courses...</span>
           <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: 4, padding: "1px 5px" }}>Ctrl K</span>
@@ -64,7 +66,7 @@ export function Topbar() {
         <button className="btn btn-icon" style={{ border: "1px solid var(--line)" }} onClick={toggleTheme}>
           {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
         </button>
-        <button className="btn btn-icon" style={{ border: "1px solid var(--line)", position: "relative" }}>
+        <button className="btn btn-icon" disabled title="Notifications backend pending" style={{ border: "1px solid var(--line)", position: "relative" }}>
           <Bell size={15} />
           <span style={{ position: "absolute", top: 7, right: 7, width: 7, height: 7, borderRadius: "50%", background: "var(--ndpc-blue)", border: "2px solid var(--bg-elev)" }} />
         </button>

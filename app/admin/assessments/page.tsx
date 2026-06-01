@@ -8,6 +8,52 @@ import { StatusBadge } from "@/components/admin/ui/StatusBadge";
 
 const TYPES = ["preCourseTest", "moduleQuiz", "moduleExam", "finalExam"] as const;
 const QUESTION_TYPES = ["multipleChoice", "trueFalse", "shortAnswer", "essay", "practical"] as const;
+type AssessmentType = typeof TYPES[number];
+type QuestionType = typeof QUESTION_TYPES[number];
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function normalizeQuestionType(value: unknown): QuestionType {
+  const raw = String(value ?? "multipleChoice").replace(/[-_\s]/g, "").toLowerCase();
+  if (raw === "truefalse") return "trueFalse";
+  if (raw === "shortanswer") return "shortAnswer";
+  if (raw === "essay") return "essay";
+  if (raw === "practical") return "practical";
+  return "multipleChoice";
+}
+
+function assessmentRowsFromJson(raw: unknown) {
+  if (Array.isArray(raw)) return raw.map(asRecord).filter(Boolean) as Record<string, unknown>[];
+  const root = asRecord(raw);
+  if (!root) return [];
+  if (Array.isArray(root.assessments)) return root.assessments.map(asRecord).filter(Boolean) as Record<string, unknown>[];
+
+  const rows: Record<string, unknown>[] = [];
+  const add = (value: unknown, type: AssessmentType, extra: Record<string, unknown> = {}) => {
+    const row = asRecord(value);
+    if (row) rows.push({ ...row, ...extra, type });
+  };
+
+  add(root.preCourseTest, "preCourseTest");
+  add(root.finalExam, "finalExam");
+  if (Array.isArray(root.modules)) {
+    root.modules.forEach(value => {
+      const module = asRecord(value);
+      if (!module) return;
+      const extra = {
+        moduleId: module.moduleId ?? module.id,
+        moduleTitle: module.moduleTitle ?? module.title ?? module.name,
+      };
+      add(module.moduleQuiz ?? module.quiz, "moduleQuiz", extra);
+      add(module.moduleExam ?? module.exam, "moduleExam", extra);
+    });
+  }
+
+  if (rows.length === 0 && typeof root.type === "string") rows.push(root);
+  return rows;
+}
 
 export default function AssessmentsPage() {
   const [courses, setCourses] = useState<AdminCourse[]>([]);
@@ -18,6 +64,7 @@ export default function AssessmentsPage() {
   const [moduleId, setModuleId] = useState("");
   const [selectedAssessmentId, setSelectedAssessmentId] = useState("");
   const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAssessment, setShowAssessment] = useState(false);
   const [showQuestion, setShowQuestion] = useState(false);
@@ -82,7 +129,7 @@ export default function AssessmentsPage() {
       moduleId: moduleScoped ? moduleId : undefined,
       title: assessmentForm.title,
       type,
-      passingScore: Number(assessmentForm.passingScore),
+      passingScore: 70,
       timeLimitMinutes: Number(assessmentForm.timeLimitMinutes),
       maxAttempts: Number(assessmentForm.maxAttempts),
       allowRetake: true,
@@ -154,6 +201,88 @@ export default function AssessmentsPage() {
     }
   };
 
+  const importAssessmentBundleJson = async (file: File) => {
+    if (!courseId) return;
+    setImporting(true);
+    setError(null);
+    try {
+      const rows = assessmentRowsFromJson(JSON.parse(await file.text()));
+      if (rows.length === 0) {
+        throw new Error("JSON must contain assessments, preCourseTest/finalExam, or module quiz/exam definitions.");
+      }
+
+      let createdCount = 0;
+      let questionCount = 0;
+      for (const row of rows) {
+        const type = String(row.type ?? "") as AssessmentType;
+        if (!TYPES.includes(type)) throw new Error(`Unsupported assessment type: ${type || "(missing)"}`);
+        const moduleScoped = type === "moduleQuiz" || type === "moduleExam";
+        const requestedModuleId = String(row.moduleId ?? "").trim();
+        const requestedModuleTitle = String(row.moduleTitle ?? row.moduleName ?? "").trim().toLowerCase();
+        const matchedModule = moduleScoped
+          ? modules.find(module => module.id === requestedModuleId || module.title.trim().toLowerCase() === requestedModuleTitle)
+          : undefined;
+        if (moduleScoped && !matchedModule) {
+          throw new Error(`${type} requires a matching moduleId or moduleTitle in the selected course.`);
+        }
+
+        const created = await adminApi.createAssessment({
+          courseId,
+          moduleId: matchedModule?.id,
+          title: String(row.title ?? row.name ?? type),
+          description: row.description == null ? undefined : String(row.description),
+          type,
+          passingScore: 70,
+          timeLimitMinutes: Number(row.timeLimitMinutes ?? row.durationMinutes ?? 30),
+          maxAttempts: Number(row.maxAttempts ?? 3),
+          allowRetake: row.allowRetake == null ? true : Boolean(row.allowRetake),
+        });
+
+        const importedQuestions = Array.isArray(row.questions) ? row.questions : Array.isArray(row.items) ? row.items : [];
+        for (let index = 0; index < importedQuestions.length; index++) {
+          const question = asRecord(importedQuestions[index]);
+          if (!question) continue;
+          const questionText = String(question.questionText ?? question.question ?? question.text ?? "").trim();
+          if (!questionText) continue;
+          const questionType = normalizeQuestionType(question.questionType ?? question.type);
+          const rawOptions = question.options;
+          const options = Array.isArray(rawOptions)
+            ? rawOptions.map(option => {
+                const record = asRecord(option);
+                return String(record?.text ?? record?.label ?? record?.value ?? option);
+              })
+            : typeof rawOptions === "string"
+              ? rawOptions.split("\n").map(value => value.trim()).filter(Boolean)
+              : questionType === "trueFalse"
+                ? ["true", "false"]
+                : undefined;
+          await adminApi.createQuestion({
+            assessmentId: created.assessment.id,
+            questionText,
+            questionType,
+            options,
+            correctAnswer: question.correctAnswer == null
+              ? question.answer == null ? undefined : String(question.answer)
+              : String(question.correctAnswer),
+            points: Number(question.points ?? 1),
+            requiresAiGrading: Boolean(question.requiresAiGrading),
+            orderIndex: Number(question.orderIndex ?? index),
+          });
+          questionCount += 1;
+        }
+        createdCount += 1;
+      }
+
+      await loadAssessments();
+      setError(null);
+      alert(`Imported ${createdCount} assessments and ${questionCount} questions.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to import assessment JSON");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const removeAssessment = async (assessment: AdminAssessment) => {
     if (!confirm(`Delete ${assessment.title}?`)) return;
     await adminApi.deleteAssessment(assessment.id);
@@ -174,7 +303,7 @@ export default function AssessmentsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Tests & Exams</h1>
           <p style={{ color: "var(--ink-3)", marginTop: 4, fontSize: 13.5 }}>Create pre-course tests, module quizzes/exams, final exams, and questions.</p>
         </div>
-        <div className="flex gap-2"><button className="btn" onClick={reload}><RefreshCw size={14} /> Refresh</button><button className="btn btn-primary" onClick={() => setShowAssessment(true)} disabled={!courseId}><Plus size={14} /> New assessment</button></div>
+        <div className="flex gap-2"><button className="btn" onClick={reload}><RefreshCw size={14} /> Refresh</button><label className={`btn ${!courseId || importing ? "btn-disabled" : ""}`}><Upload size={14} /> {importing ? "Importing..." : "Import assessment JSON"}<input type="file" accept="application/json,.json" disabled={!courseId || importing} style={{ display: "none" }} onChange={e => { const file = e.target.files?.[0]; if (file) importAssessmentBundleJson(file); e.currentTarget.value = ""; }} /></label><button className="btn btn-primary" onClick={() => setShowAssessment(true)} disabled={!courseId}><Plus size={14} /> New assessment</button></div>
       </div>
       <div className="card" style={{ padding: 14, marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Course</span><select className="input" value={courseId} onChange={e => { setCourseId(e.target.value); setModuleId(""); setSelectedAssessmentId(""); }}>{courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</select></label>
@@ -191,7 +320,7 @@ export default function AssessmentsPage() {
         </div>
       </div>
       <Modal open={showAssessment} onClose={() => setShowAssessment(false)} title="New assessment" footer={<><button className="btn" onClick={() => setShowAssessment(false)}>Cancel</button><button className="btn btn-primary" disabled={!assessmentForm.title.trim()} onClick={saveAssessment}>Create</button></>}>
-        <div style={{ display: "grid", gap: 12 }}><input className="input" placeholder="Assessment title" value={assessmentForm.title} onChange={e => setAssessmentForm(v => ({ ...v, title: e.target.value }))} /><select className="input" value={assessmentForm.type} onChange={e => setAssessmentForm(v => ({ ...v, type: e.target.value }))}>{TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}><input className="input" type="number" value={assessmentForm.passingScore} onChange={e => setAssessmentForm(v => ({ ...v, passingScore: Number(e.target.value) }))} /><input className="input" type="number" value={assessmentForm.timeLimitMinutes} onChange={e => setAssessmentForm(v => ({ ...v, timeLimitMinutes: Number(e.target.value) }))} /><input className="input" type="number" value={assessmentForm.maxAttempts} onChange={e => setAssessmentForm(v => ({ ...v, maxAttempts: Number(e.target.value) }))} /></div></div>
+        <div style={{ display: "grid", gap: 12 }}><input className="input" placeholder="Assessment title" value={assessmentForm.title} onChange={e => setAssessmentForm(v => ({ ...v, title: e.target.value }))} /><select className="input" value={assessmentForm.type} onChange={e => setAssessmentForm(v => ({ ...v, type: e.target.value }))}>{TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}><input className="input" type="number" value={70} disabled title="Passing score is fixed at 70%" /><input className="input" type="number" value={assessmentForm.timeLimitMinutes} onChange={e => setAssessmentForm(v => ({ ...v, timeLimitMinutes: Number(e.target.value) }))} /><input className="input" type="number" value={assessmentForm.maxAttempts} onChange={e => setAssessmentForm(v => ({ ...v, maxAttempts: Number(e.target.value) }))} /></div></div>
       </Modal>
       <Modal open={showQuestion} onClose={() => setShowQuestion(false)} title="New question" footer={<><button className="btn" onClick={() => setShowQuestion(false)}>Cancel</button><button className="btn btn-primary" disabled={!questionForm.questionText.trim()} onClick={saveQuestion}>Create</button></>}>
         <div style={{ display: "grid", gap: 12 }}><textarea className="input" rows={3} placeholder="Question text" value={questionForm.questionText} onChange={e => setQuestionForm(v => ({ ...v, questionText: e.target.value }))} /><select className="input" value={questionForm.questionType} onChange={e => setQuestionForm(v => ({ ...v, questionType: e.target.value }))}>{QUESTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>{questionForm.questionType === "multipleChoice" && <textarea className="input" rows={4} value={questionForm.options} onChange={e => setQuestionForm(v => ({ ...v, options: e.target.value }))} />}<input className="input" placeholder="Correct answer" value={questionForm.correctAnswer} onChange={e => setQuestionForm(v => ({ ...v, correctAnswer: e.target.value }))} /><input className="input" type="number" min={1} value={questionForm.points} onChange={e => setQuestionForm(v => ({ ...v, points: Number(e.target.value) }))} /><label className="flex items-center gap-2" style={{ fontSize: 13 }}><input type="checkbox" checked={questionForm.requiresAiGrading} onChange={e => setQuestionForm(v => ({ ...v, requiresAiGrading: e.target.checked }))} /> Requires AI/manual grading</label></div>

@@ -12,6 +12,11 @@ export default function DevicesPage() {
   const { data, loading, error, reload } = useApiResource(() => adminApi.deviceLogs({ pageSize: 100 }), []);
   const logs = data?.logs ?? [];
   const filtered = useMemo(() => logs.filter((d: DeviceLog) => !search || `${d.userName ?? ""} ${d.userId ?? ""} ${d.action} ${d.ipAddress ?? ""}`.toLowerCase().includes(search.toLowerCase())), [logs, search]);
+  const exportCsv = () => {
+    const rows = [["Time", "User", "Action", "Device code", "IP"], ...filtered.map(log => [log.timestamp, log.userName ?? log.userId ?? "System", log.action, log.deviceCode ?? "", log.ipAddress ?? ""])];
+    const url = URL.createObjectURL(new Blob([rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n")], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = "ndpc-device-logs.csv"; anchor.click(); URL.revokeObjectURL(url);
+  };
 
   return (
     <div style={{ padding: "20px 24px 64px", maxWidth: 1480, margin: "0 auto" }}>
@@ -21,7 +26,7 @@ export default function DevicesPage() {
           <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", margin: 0 }}>Device Monitoring</h1>
           <p style={{ color: "var(--ink-3)", marginTop: 4, fontSize: 13.5 }}>Live backend device/audit logs. Map tracking remains backend pending.</p>
         </div>
-        <div className="flex gap-2"><button className="btn"><Download size={14} /> Export</button><button className="btn" onClick={reload}><RefreshCw size={14} /> Refresh</button></div>
+        <div className="flex gap-2"><button className="btn" disabled={!filtered.length} onClick={exportCsv}><Download size={14} /> Export</button><button className="btn" onClick={reload}><RefreshCw size={14} /> Refresh</button></div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16 }}>
         <StatCard eyebrow="Logs loaded" icon={Smartphone} value={logs.length} delta="backend" sparkData={[1,2,3,4,5,6,7]} />

@@ -99,6 +99,35 @@ export type DeviceLog = {
   timestamp: string;
 };
 
+export type StudyTrackerLearner = {
+  id: string;
+  name: string;
+  email: string;
+  isEmailVerified: boolean;
+  createdAt: string;
+  enrolledCourses: number;
+  lessonsCompleted: number;
+  coursesCompleted: number;
+  averageProgress: number;
+  events: number;
+  lastSeen: string | null;
+};
+
+export type StudyTrackerData = {
+  periodDays: number;
+  stats: {
+    registeredLearners: number;
+    verifiedLearners: number;
+    activeLearners: number;
+    courses: number;
+    studyEvents: number;
+  };
+  learners: StudyTrackerLearner[];
+  atRiskLearners: StudyTrackerLearner[];
+  heatmap: number[][];
+  recentActivity: { id: string; userId: string | null; userName: string; action: string; resourceType: string | null; timestamp: string }[];
+};
+
 export type ActivationCode = {
   id: string;
   code: string;
@@ -218,6 +247,10 @@ export const adminApi = {
   deviceLogs(params: { page?: number; pageSize?: number; userId?: string; startDate?: string } = {}) {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "") as [string, string][]).toString();
     return apiRequest<Paginated<"logs", DeviceLog>>(`/admin/device-logs${q ? `?${q}` : ""}`);
+  },
+
+  studyTracker(days = 7) {
+    return apiRequest<StudyTrackerData>(`/admin/study-tracker?days=${days}`);
   },
 
   courses(params: { page?: number; pageSize?: number; search?: string; published?: boolean } = {}) {
