@@ -24,34 +24,77 @@ function normalizeQuestionType(value: unknown): QuestionType {
   return "multipleChoice";
 }
 
+function compactKey(value: unknown) {
+  return String(value ?? "").replace(/[-_\s]/g, "").toLowerCase();
+}
+
+function recordValue(record: Record<string, unknown>, ...aliases: string[]) {
+  const keys = new Set(aliases.map(compactKey));
+  const entry = Object.entries(record).find(([key]) => keys.has(compactKey(key)));
+  return entry?.[1];
+}
+
+function normalizeAssessmentType(value: unknown): AssessmentType | null {
+  const raw = compactKey(value);
+  if (["precoursetest", "pretest", "coursepretest", "preassessment"].includes(raw)) return "preCourseTest";
+  if (["modulequiz", "quiz", "practicequiz"].includes(raw)) return "moduleQuiz";
+  if (["moduleexam", "moduletest", "test", "exam"].includes(raw)) return "moduleExam";
+  if (["finalexam", "finaltest", "courseexam", "coursefinalexam"].includes(raw)) return "finalExam";
+  return null;
+}
+
 function assessmentRowsFromJson(raw: unknown) {
   if (Array.isArray(raw)) return raw.map(asRecord).filter(Boolean) as Record<string, unknown>[];
   const root = asRecord(raw);
   if (!root) return [];
-  if (Array.isArray(root.assessments)) return root.assessments.map(asRecord).filter(Boolean) as Record<string, unknown>[];
 
   const rows: Record<string, unknown>[] = [];
-  const add = (value: unknown, type: AssessmentType, extra: Record<string, unknown> = {}) => {
+  const add = (value: unknown, type: AssessmentType | null, extra: Record<string, unknown> = {}) => {
+    if (!type) return;
+    if (Array.isArray(value)) {
+      value.forEach(item => add(item, type, extra));
+      return;
+    }
     const row = asRecord(value);
     if (row) rows.push({ ...row, ...extra, type });
   };
 
-  add(root.preCourseTest, "preCourseTest");
-  add(root.finalExam, "finalExam");
-  if (Array.isArray(root.modules)) {
-    root.modules.forEach(value => {
+  const addCollection = (value: unknown) => {
+    if (!Array.isArray(value)) return;
+    value.forEach(item => {
+      const row = asRecord(item);
+      if (!row) return;
+      const type = normalizeAssessmentType(recordValue(row, "type", "assessmentType", "examType", "testType"));
+      if (type) rows.push({ ...row, type });
+    });
+  };
+
+  addCollection(recordValue(root, "assessments"));
+  addCollection(recordValue(root, "tests"));
+  addCollection(recordValue(root, "exams"));
+  add(recordValue(root, "preCourseTest", "preTest", "coursePreTest", "preAssessment"), "preCourseTest");
+  add(recordValue(root, "finalExam", "finalTest", "courseFinalExam", "courseExam"), "finalExam");
+  add(recordValue(root, "moduleQuizzes"), "moduleQuiz");
+  add(recordValue(root, "moduleExams", "moduleTests"), "moduleExam");
+
+  const moduleDefinitions = recordValue(root, "modules");
+  if (Array.isArray(moduleDefinitions)) {
+    moduleDefinitions.forEach(value => {
       const module = asRecord(value);
       if (!module) return;
       const extra = {
-        moduleId: module.moduleId ?? module.id,
-        moduleTitle: module.moduleTitle ?? module.title ?? module.name,
+        moduleId: recordValue(module, "moduleId", "id"),
+        moduleTitle: recordValue(module, "moduleTitle", "title", "name"),
       };
-      add(module.moduleQuiz ?? module.quiz, "moduleQuiz", extra);
-      add(module.moduleExam ?? module.exam, "moduleExam", extra);
+      add(recordValue(module, "moduleQuiz", "quiz", "practiceQuiz"), "moduleQuiz", extra);
+      add(recordValue(module, "moduleExam", "moduleTest", "exam", "test"), "moduleExam", extra);
     });
   }
 
-  if (rows.length === 0 && typeof root.type === "string") rows.push(root);
+  if (rows.length === 0) {
+    const type = normalizeAssessmentType(recordValue(root, "type", "assessmentType", "examType", "testType"));
+    if (type) rows.push({ ...root, type });
+  }
   return rows;
 }
 
@@ -208,14 +251,14 @@ export default function AssessmentsPage() {
     try {
       const rows = assessmentRowsFromJson(JSON.parse(await file.text()));
       if (rows.length === 0) {
-        throw new Error("JSON must contain assessments, preCourseTest/finalExam, or module quiz/exam definitions.");
+        throw new Error("No assessment definitions found. For a full bundle, include assessments, preTest/preCourseTest, finalExam, or module quiz/exam definitions. For a question-only file, first select an assessment and use its Import JSON button.");
       }
 
       let createdCount = 0;
       let questionCount = 0;
       for (const row of rows) {
-        const type = String(row.type ?? "") as AssessmentType;
-        if (!TYPES.includes(type)) throw new Error(`Unsupported assessment type: ${type || "(missing)"}`);
+        const type = normalizeAssessmentType(row.type);
+        if (!type || !TYPES.includes(type)) throw new Error(`Unsupported assessment type: ${String(row.type ?? "(missing)")}`);
         const moduleScoped = type === "moduleQuiz" || type === "moduleExam";
         const requestedModuleId = String(row.moduleId ?? "").trim();
         const requestedModuleTitle = String(row.moduleTitle ?? row.moduleName ?? "").trim().toLowerCase();
