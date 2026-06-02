@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { BookOpen, FileText, Layers, Link as LinkIcon, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpen, FileText, Layers, Link as LinkIcon, Pencil, Play, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { adminApi, AdminCourse, AdminLesson, AdminModule } from "@/lib/admin-api";
 import { useApiResource } from "@/lib/use-api-resource";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
@@ -29,6 +29,9 @@ export default function CoursesPage() {
   const [selectedModuleId, setSelectedModuleId] = useState("");
   const [moduleTitle, setModuleTitle] = useState("");
   const [moduleDescription, setModuleDescription] = useState("");
+  const [editingModuleId, setEditingModuleId] = useState("");
+  const [editModuleTitle, setEditModuleTitle] = useState("");
+  const [editModuleDescription, setEditModuleDescription] = useState("");
   const [lessonTitle, setLessonTitle] = useState("");
   const [lessonContentType, setLessonContentType] = useState<"video" | "pdf" | "text" | "interactive">("video");
   const [lessonContentUrl, setLessonContentUrl] = useState("");
@@ -123,7 +126,7 @@ export default function CoursesPage() {
         courseId: managing.id,
         title: moduleTitle.trim(),
         description: moduleDescription.trim() || undefined,
-        orderIndex: modules.length,
+        orderIndex: modules.reduce((max, module) => Math.max(max, module.orderIndex), -1) + 1,
         hasAITester: false,
       });
       setModules(current => [...current, created.module]);
@@ -134,6 +137,61 @@ export default function CoursesPage() {
       await reload();
     } catch (err) {
       setContentError(err instanceof Error ? err.message : "Unable to create module.");
+    } finally {
+      setContentBusy(false);
+    }
+  };
+
+  const beginEditModule = (module: AdminModule) => {
+    setEditingModuleId(module.id);
+    setEditModuleTitle(module.title);
+    setEditModuleDescription(module.description ?? "");
+  };
+
+  const cancelEditModule = () => {
+    setEditingModuleId("");
+    setEditModuleTitle("");
+    setEditModuleDescription("");
+  };
+
+  const saveModule = async (module: AdminModule) => {
+    if (!editModuleTitle.trim()) return;
+    setContentBusy(true);
+    setContentError(null);
+    try {
+      const updated = await adminApi.updateModule(module.id, {
+        title: editModuleTitle.trim(),
+        description: editModuleDescription.trim(),
+      });
+      setModules(current => current.map(item => item.id === module.id ? { ...item, ...updated.module } : item));
+      cancelEditModule();
+    } catch (err) {
+      setContentError(err instanceof Error ? err.message : "Unable to update module.");
+    } finally {
+      setContentBusy(false);
+    }
+  };
+
+  const moveModule = async (module: AdminModule, direction: -1 | 1) => {
+    const sorted = [...modules].sort((a, b) => a.orderIndex - b.orderIndex);
+    const index = sorted.findIndex(item => item.id === module.id);
+    const other = sorted[index + direction];
+    if (!other) return;
+    setContentBusy(true);
+    setContentError(null);
+    try {
+      const temporaryIndex = sorted.reduce((max, item) => Math.max(max, item.orderIndex), -1) + 1;
+      await adminApi.updateModule(module.id, { orderIndex: temporaryIndex });
+      await adminApi.updateModule(other.id, { orderIndex: module.orderIndex });
+      await adminApi.updateModule(module.id, { orderIndex: other.orderIndex });
+      const data = await adminApi.modules(module.courseId);
+      setModules(data.modules ?? []);
+    } catch (err) {
+      setContentError(err instanceof Error ? err.message : "Unable to move module.");
+      if (managing) {
+        const data = await adminApi.modules(managing.id);
+        setModules(data.modules ?? []);
+      }
     } finally {
       setContentBusy(false);
     }
@@ -260,7 +318,23 @@ export default function CoursesPage() {
             <div>
               <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>Class/module</div>
               <select className="input" value={selectedModuleId} onChange={e => changeModule(e.target.value)}><option value="">Select module</option>{modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}</select>
-              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>{modules.length === 0 ? <EmptyState icon={Layers} title="No modules yet" description="Create a class/module before adding lessons." /> : modules.map(m => <div key={m.id} className="flex gap-1"><button className={`btn ${m.id === selectedModuleId ? "btn-primary" : ""}`} onClick={() => changeModule(m.id)} style={{ justifyContent: "flex-start", flex: 1 }}><Layers size={13} /> {m.title}</button><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={() => removeModule(m)}><Trash2 size={13} /></button></div>)}</div>
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>{modules.length === 0 ? <EmptyState icon={Layers} title="No modules yet" description="Create a class/module before adding lessons." /> : modules.map((m, index) => <div key={m.id} style={{ display: "grid", gap: 6 }}>
+                <div className="flex gap-1">
+                  <button className={`btn ${m.id === selectedModuleId ? "btn-primary" : ""}`} onClick={() => changeModule(m.id)} style={{ justifyContent: "flex-start", flex: 1, minWidth: 0 }}><Layers size={13} /> <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</span></button>
+                  <button className="btn btn-icon btn-ghost btn-sm" title="Move module up" disabled={contentBusy || index === 0} onClick={() => moveModule(m, -1)}><ArrowUp size={13} /></button>
+                  <button className="btn btn-icon btn-ghost btn-sm" title="Move module down" disabled={contentBusy || index === modules.length - 1} onClick={() => moveModule(m, 1)}><ArrowDown size={13} /></button>
+                  <button className="btn btn-icon btn-ghost btn-sm" title="Edit module" disabled={contentBusy} onClick={() => beginEditModule(m)}><Pencil size={13} /></button>
+                  <button className="btn btn-icon btn-ghost btn-sm btn-danger" title="Delete module" disabled={contentBusy} onClick={() => removeModule(m)}><Trash2 size={13} /></button>
+                </div>
+                {editingModuleId === m.id && <div style={{ display: "grid", gap: 6, padding: 8, border: "1px solid var(--hairline)", borderRadius: 8 }}>
+                  <input className="input" value={editModuleTitle} onChange={e => setEditModuleTitle(e.target.value)} placeholder="Module title" />
+                  <textarea className="input" rows={2} value={editModuleDescription} onChange={e => setEditModuleDescription(e.target.value)} placeholder="Module description" />
+                  <div className="flex gap-1 justify-end">
+                    <button className="btn btn-sm" disabled={contentBusy} onClick={cancelEditModule}><X size={13} /> Cancel</button>
+                    <button className="btn btn-sm btn-primary" disabled={contentBusy || !editModuleTitle.trim()} onClick={() => saveModule(m)}><Save size={13} /> Save</button>
+                  </div>
+                </div>}
+              </div>)}</div>
             </div>
             <div>
               <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>Lessons in {selectedModule?.title ?? "module"}</div>
