@@ -12,6 +12,7 @@ const QUESTION_TYPES = ["multipleChoice", "trueFalse", "shortAnswer", "essay", "
 type AssessmentType = typeof TYPES[number];
 type QuestionType = typeof QUESTION_TYPES[number];
 type ImportPreview = { fileName: string; rows: Record<string, unknown>[] };
+const COURSE_LEVEL_FILTER = "__course_level__";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -58,7 +59,7 @@ function inferStandaloneAssessmentType(root: Record<string, unknown>): Assessmen
   ].filter(Boolean).join(" "));
   if (scope.includes("module") && (hint.includes("pretest") || hint.includes("preassessment"))) return "modulePreTest";
   if (hint.includes("modulepretest") || hint.includes("modulepreassessment")) return "modulePreTest";
-  if (hint.includes("finalexam") || hint.includes("finaltest")) return "finalExam";
+  if ((hint.includes("final") && (hint.includes("exam") || hint.includes("test"))) || (scope.includes("course") && hint.includes("exam"))) return "finalExam";
   if (hint.includes("precoursetest") || hint.includes("pretest")) return "preCourseTest";
   if (scope.includes("module") && (hint.includes("exam") || hint.includes("test"))) return "moduleExam";
   if (hint.includes("moduleexam") || hint.includes("moduletest") || hint.includes("exam")) return "moduleExam";
@@ -119,7 +120,7 @@ function assessmentRowsFromJson(raw: unknown) {
     value.forEach(item => {
       const row = asRecord(item);
       if (!row) return;
-      const type = normalizeAssessmentType(recordValue(row, "type", "assessmentType", "examType", "testType"));
+      const type = normalizeAssessmentType(recordValue(row, "type", "assessmentType", "examType", "testType")) ?? inferStandaloneAssessmentType(row);
       if (type) rows.push({ ...row, type });
     });
   };
@@ -138,7 +139,7 @@ function assessmentRowsFromJson(raw: unknown) {
   add(recordValue(root, "preTest", "preAssessment"), isModuleBundle ? "modulePreTest" : "preCourseTest", rootModuleExtra);
   add(recordValue(root, "finalExam", "finalTest", "courseFinalExam", "courseExam"), "finalExam");
   add(recordValue(root, "moduleQuizzes"), "moduleQuiz");
-  add(recordValue(root, "modulePreTests", "modulePreAssessments"), "modulePreTest");
+  add(recordValue(root, "modulePreTests", "modulePreAssessments", "preTests"), "modulePreTest");
   add(recordValue(root, "moduleExams", "moduleTests"), "moduleExam");
   add(recordValue(root, "moduleQuiz", "practiceQuiz"), "moduleQuiz", rootModuleExtra);
   add(recordValue(root, "moduleExam", "moduleTest"), "moduleExam", rootModuleExtra);
@@ -184,6 +185,7 @@ export default function AssessmentsPage() {
   const [questionForm, setQuestionForm] = useState({ questionText: "", questionType: "multipleChoice", options: "Option A\nOption B\nOption C", correctAnswer: "", points: 1, requiresAiGrading: false });
 
   const selectedAssessment = useMemo(() => assessments.find(a => a.id === selectedAssessmentId), [assessments, selectedAssessmentId]);
+  const selectedModuleId = moduleId === COURSE_LEVEL_FILTER ? "" : moduleId;
 
   const loadCourses = useCallback(async () => {
     const data = await adminApi.courses({ pageSize: 100 });
@@ -194,11 +196,13 @@ export default function AssessmentsPage() {
 
   const loadAssessments = useCallback(async () => {
     if (!courseId) return;
-    const data = await adminApi.assessments({ courseId, moduleId: moduleId || undefined });
-    const list = data.assessments ?? [];
+    const data = await adminApi.assessments({ courseId, moduleId: selectedModuleId || undefined });
+    const list = moduleId === COURSE_LEVEL_FILTER
+      ? (data.assessments ?? []).filter(assessment => !assessment.moduleId)
+      : data.assessments ?? [];
     setAssessments(list);
     setSelectedAssessmentId(current => current || list[0]?.id || "");
-  }, [courseId, moduleId]);
+  }, [courseId, moduleId, selectedModuleId]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -236,19 +240,27 @@ export default function AssessmentsPage() {
     if (!courseId) return;
     const type = assessmentForm.type;
     const moduleScoped = type === "modulePreTest" || type === "moduleQuiz" || type === "moduleExam";
-    await adminApi.createAssessment({
-      courseId,
-      moduleId: moduleScoped ? moduleId : undefined,
-      title: assessmentForm.title,
-      type,
-      passingScore: 70,
-      timeLimitMinutes: Number(assessmentForm.timeLimitMinutes),
-      maxAttempts: Number(assessmentForm.maxAttempts),
-      allowRetake: true,
-    });
-    setShowAssessment(false);
-    setAssessmentForm({ title: "", type: "moduleQuiz", passingScore: 70, timeLimitMinutes: 30, maxAttempts: 3 });
-    await loadAssessments();
+    if (moduleScoped && !selectedModuleId) {
+      setError(`${assessmentTypeLabel(type)} requires a module. Choose a module in Assessment view first.`);
+      return;
+    }
+    try {
+      await adminApi.createAssessment({
+        courseId,
+        moduleId: moduleScoped ? selectedModuleId : undefined,
+        title: assessmentForm.title,
+        type,
+        passingScore: 70,
+        timeLimitMinutes: Number(assessmentForm.timeLimitMinutes),
+        maxAttempts: Number(assessmentForm.maxAttempts),
+        allowRetake: true,
+      });
+      setShowAssessment(false);
+      setAssessmentForm({ title: "", type: "moduleQuiz", passingScore: 70, timeLimitMinutes: 30, maxAttempts: 3 });
+      await loadAssessments();
+    } catch (err) {
+      setError(requestErrorMessage(err));
+    }
   };
 
   const saveQuestion = async () => {
@@ -285,7 +297,7 @@ export default function AssessmentsPage() {
         const row = rows[index] as Record<string, unknown>;
         const questionText = String(row.questionText ?? row.question ?? row.text ?? "").trim();
         if (!questionText) continue;
-        const questionType = String(row.questionType ?? row.type ?? "multipleChoice");
+        const questionType = normalizeQuestionType(row.questionType ?? row.type);
         const rawOptions = row.options;
         const options = Array.isArray(rawOptions)
           ? rawOptions.map(String)
@@ -347,23 +359,33 @@ export default function AssessmentsPage() {
               module.id === requestedModuleId ||
               module.title.trim().toLowerCase() === requestedModuleTitle ||
               (requestedModuleNumber && moduleNumber(module.title) === requestedModuleNumber) ||
-              (moduleId && module.id === moduleId))
+              (selectedModuleId && module.id === selectedModuleId))
           : undefined;
         if (moduleScoped && !matchedModule) {
           throw new Error(`${type} requires a matching class/module. Select the module filter first, or include moduleId/moduleTitle in the JSON.`);
         }
 
-        const created = await adminApi.createAssessment({
-          courseId,
-          moduleId: matchedModule?.id,
-          title: String(row.title ?? row.name ?? type),
-          description: row.description == null ? undefined : String(row.description),
-          type,
-          passingScore: 70,
-          timeLimitMinutes: Number(row.timeLimitMinutes ?? row.durationMinutes ?? 30),
-          maxAttempts: Number(row.maxAttempts ?? 3),
-          allowRetake: row.allowRetake == null ? true : Boolean(row.allowRetake),
-        });
+        const title = String(row.title ?? row.name ?? type);
+        let created;
+        try {
+          created = await adminApi.createAssessment({
+            courseId,
+            moduleId: matchedModule?.id,
+            title,
+            description: row.description == null ? undefined : String(row.description),
+            type,
+            passingScore: 70,
+            timeLimitMinutes: Number(row.timeLimitMinutes ?? row.durationMinutes ?? 30),
+            maxAttempts: Number(row.maxAttempts ?? 3),
+            allowRetake: row.allowRetake == null ? true : Boolean(row.allowRetake),
+          });
+        } catch (err) {
+          const detail = requestErrorMessage(err);
+          const migrationHint = type === "modulePreTest" && detail === "An unexpected error occurred"
+            ? " Confirm the server database has applied prisma/deploy/20260601_add_module_pre_test.sql."
+            : "";
+          throw new Error(`Could not create ${assessmentTypeLabel(type)} "${title}": ${detail}.${migrationHint}`);
+        }
 
         const importedQuestions = Array.isArray(row.questions) ? row.questions : Array.isArray(row.items) ? row.items : [];
         for (let index = 0; index < importedQuestions.length; index++) {
@@ -383,18 +405,22 @@ export default function AssessmentsPage() {
               : questionType === "trueFalse"
                 ? ["true", "false"]
                 : undefined;
-          await adminApi.createQuestion({
-            assessmentId: created.assessment.id,
-            questionText,
-            questionType,
-            options,
-            correctAnswer: question.correctAnswer == null
-              ? question.answer == null ? undefined : String(question.answer)
-              : String(question.correctAnswer),
-            points: Number(question.points ?? 1),
-            requiresAiGrading: Boolean(question.requiresAiGrading),
-            orderIndex: Number(question.orderIndex ?? index),
-          });
+          try {
+            await adminApi.createQuestion({
+              assessmentId: created.assessment.id,
+              questionText,
+              questionType,
+              options,
+              correctAnswer: question.correctAnswer == null
+                ? question.answer == null ? undefined : String(question.answer)
+                : String(question.correctAnswer),
+              points: Number(question.points ?? 1),
+              requiresAiGrading: Boolean(question.requiresAiGrading),
+              orderIndex: Number(question.orderIndex ?? index),
+            });
+          } catch (err) {
+            throw new Error(`Could not store question ${index + 1} for ${assessmentTypeLabel(type)} "${title}": ${requestErrorMessage(err)}`);
+          }
           questionCount += 1;
         }
         createdCount += 1;
@@ -449,7 +475,7 @@ export default function AssessmentsPage() {
       </div>
       <div className="card" style={{ padding: 14, marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Course</span><select className="input" value={courseId} onChange={e => { setCourseId(e.target.value); setModuleId(""); setSelectedAssessmentId(""); }}>{courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</select></label>
-        <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Module filter</span><select className="input" value={moduleId} onChange={e => { setModuleId(e.target.value); setSelectedAssessmentId(""); }}><option value="">All course assessments</option>{modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}</select></label>
+        <label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>Assessment view</span><select className="input" value={moduleId} onChange={e => { setModuleId(e.target.value); setSelectedAssessmentId(""); }}><option value="">All assessments</option><option value={COURSE_LEVEL_FILTER}>Course-level pre-test &amp; final exam</option><optgroup label="Module assessments">{modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}</optgroup></select></label>
       </div>
       {error && <div className="card" style={{ padding: 14, color: "var(--ndpc-red)", marginBottom: 16 }}>{error}</div>}
       {message && <div className="card" style={{ padding: 14, color: "var(--ndpc-green)", marginBottom: 16 }}><CheckCircle2 size={15} style={{ display: "inline", marginRight: 8 }} />{message}</div>}
@@ -470,7 +496,7 @@ export default function AssessmentsPage() {
         <div style={{ overflowX: "auto", border: "1px solid var(--hairline)", borderRadius: 8 }}><table className="tbl"><thead><tr><th>Assessment</th><th>Stored as</th><th>Module</th><th>Questions</th><th>Required</th></tr></thead><tbody>{importPreview?.rows.map((row, index) => {
           const type = normalizeAssessmentType(row.type) ?? "moduleExam";
           const requestedModuleNumber = moduleNumber(row.moduleId ?? row.moduleTitle ?? row.assessmentId ?? row.title);
-          const matchedModule = modules.find(module => module.id === String(row.moduleId ?? "") || (requestedModuleNumber && moduleNumber(module.title) === requestedModuleNumber) || (moduleId && module.id === moduleId));
+          const matchedModule = modules.find(module => module.id === String(row.moduleId ?? "") || (requestedModuleNumber && moduleNumber(module.title) === requestedModuleNumber) || (selectedModuleId && module.id === selectedModuleId));
           const count = Array.isArray(row.questions) ? row.questions.length : Array.isArray(row.items) ? row.items.length : 0;
           return <tr key={`${String(row.title ?? type)}-${index}`}><td>{String(row.title ?? row.name ?? type)}</td><td><StatusBadge value="active" label={assessmentTypeLabel(type)} /></td><td>{matchedModule?.title ?? (type === "preCourseTest" || type === "finalExam" ? "Course level" : "Select module filter")}</td><td>{count}</td><td>{requiredQuestionCount(type)}</td></tr>;
         })}</tbody></table></div>
