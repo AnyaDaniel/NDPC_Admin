@@ -19,21 +19,22 @@ function formatBytes(bytes: number) {
 }
 
 function uploadErrorMessage(err: unknown, file: File) {
+  const fileLabel = `${file.name} (${formatBytes(file.size)})`;
   if (err instanceof ApiError) {
-    if (err.status === 401) return "Your admin session expired. Please sign in again.";
-    if (err.status === 404) return "Upload endpoint is not available on the live backend yet.";
-    if (err.code === "INVALID_FILE_TYPE") return "Unsupported file type for this upload category.";
+    if (err.status === 401) return `${fileLabel}: your admin session expired. Please sign in again.`;
+    if (err.status === 404) return `${fileLabel}: upload endpoint is not available on the live backend yet.`;
+    if (err.code === "INVALID_FILE_TYPE") return `${fileLabel}: unsupported file type for this upload category.`;
 
     const code = err.code ? ` (${err.code})` : "";
-    return `Upload failed${code}: ${err.message}`;
+    return `${fileLabel}: upload failed${code}: ${err.message}`;
   }
 
   if (err instanceof TypeError && err.message.toLowerCase().includes("failed to fetch")) {
-    return `Upload failed: the browser connection to the backend was interrupted while sending ${file.name} (${formatBytes(file.size)}). If this is a large video, confirm the backend and Nginx large-upload settings are deployed.`;
+    return `${fileLabel}: the browser connection to the backend was interrupted while sending the file. If this is a large video, confirm the backend and Nginx large-upload settings are deployed.`;
   }
 
-  if (err instanceof Error) return `Upload failed: ${err.message}`;
-  return "Upload failed. Please check the file and try again.";
+  if (err instanceof Error) return `${fileLabel}: upload failed: ${err.message}`;
+  return `${fileLabel}: upload failed. Please check the file and try again.`;
 }
 
 export default function UploadsPage() {
