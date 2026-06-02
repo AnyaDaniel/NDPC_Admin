@@ -72,6 +72,19 @@ function moduleNumber(value: unknown) {
   return match?.[1] ? String(Number(match[1])) : "";
 }
 
+function matchModuleForRow(row: Record<string, unknown>, modules: AdminModule[], selectedModuleId: string) {
+  const requestedModuleId = String(row.moduleId ?? "").trim();
+  const requestedModuleTitle = String(row.moduleTitle ?? row.moduleName ?? "").trim().toLowerCase();
+  const requestedModuleNumber = moduleNumber(row.moduleId ?? row.moduleTitle ?? row.assessmentId ?? row.title);
+  const hasDeclaredModule = Boolean(requestedModuleId || requestedModuleTitle || requestedModuleNumber);
+  return modules.find(module =>
+    module.id === requestedModuleId ||
+    module.title.trim().toLowerCase() === requestedModuleTitle ||
+    (requestedModuleNumber && moduleNumber(module.title) === requestedModuleNumber) ||
+    (!hasDeclaredModule && selectedModuleId && module.id === selectedModuleId)
+  );
+}
+
 function assessmentTypeLabel(type: string) {
   if (type === "preCourseTest") return "Course Pre-Test";
   if (type === "modulePreTest") return "Module Pre-Test";
@@ -345,22 +358,23 @@ export default function AssessmentsPage() {
     setError(null);
     setMessage(null);
     try {
+      const unmatchedRows = importPreview.rows.filter(row => {
+        const type = normalizeAssessmentType(row.type);
+        const moduleScoped = type === "modulePreTest" || type === "moduleQuiz" || type === "moduleExam";
+        return moduleScoped && !matchModuleForRow(row, modules, selectedModuleId);
+      });
+      if (unmatchedRows.length > 0) {
+        const missing = unmatchedRows.map(row => String(row.title ?? row.assessmentId ?? "Unnamed module assessment"));
+        throw new Error(`Cannot import this batch. Create the missing backend class/module first: ${missing.join("; ")}`);
+      }
+
       let createdCount = 0;
       let questionCount = 0;
       for (const row of importPreview.rows) {
         const type = normalizeAssessmentType(row.type);
         if (!type || !TYPES.includes(type)) throw new Error(`Unsupported assessment type: ${String(row.type ?? "(missing)")}`);
         const moduleScoped = type === "modulePreTest" || type === "moduleQuiz" || type === "moduleExam";
-        const requestedModuleId = String(row.moduleId ?? "").trim();
-        const requestedModuleTitle = String(row.moduleTitle ?? row.moduleName ?? "").trim().toLowerCase();
-        const requestedModuleNumber = moduleNumber(row.moduleId ?? row.moduleTitle ?? row.assessmentId ?? row.title);
-        const matchedModule = moduleScoped
-          ? modules.find(module =>
-              module.id === requestedModuleId ||
-              module.title.trim().toLowerCase() === requestedModuleTitle ||
-              (requestedModuleNumber && moduleNumber(module.title) === requestedModuleNumber) ||
-              (selectedModuleId && module.id === selectedModuleId))
-          : undefined;
+        const matchedModule = moduleScoped ? matchModuleForRow(row, modules, selectedModuleId) : undefined;
         if (moduleScoped && !matchedModule) {
           throw new Error(`${type} requires a matching class/module. Select the module filter first, or include moduleId/moduleTitle in the JSON.`);
         }
@@ -495,10 +509,9 @@ export default function AssessmentsPage() {
         <div style={{ color: "var(--ink-3)", fontSize: 12.5, marginBottom: 12 }}>{importPreview?.fileName}</div>
         <div style={{ overflowX: "auto", border: "1px solid var(--hairline)", borderRadius: 8 }}><table className="tbl"><thead><tr><th>Assessment</th><th>Stored as</th><th>Module</th><th>Questions</th><th>Required</th></tr></thead><tbody>{importPreview?.rows.map((row, index) => {
           const type = normalizeAssessmentType(row.type) ?? "moduleExam";
-          const requestedModuleNumber = moduleNumber(row.moduleId ?? row.moduleTitle ?? row.assessmentId ?? row.title);
-          const matchedModule = modules.find(module => module.id === String(row.moduleId ?? "") || (requestedModuleNumber && moduleNumber(module.title) === requestedModuleNumber) || (selectedModuleId && module.id === selectedModuleId));
+          const matchedModule = matchModuleForRow(row, modules, selectedModuleId);
           const count = Array.isArray(row.questions) ? row.questions.length : Array.isArray(row.items) ? row.items.length : 0;
-          return <tr key={`${String(row.title ?? type)}-${index}`}><td>{String(row.title ?? row.name ?? type)}</td><td><StatusBadge value="active" label={assessmentTypeLabel(type)} /></td><td>{matchedModule?.title ?? (type === "preCourseTest" || type === "finalExam" ? "Course level" : "Select module filter")}</td><td>{count}</td><td>{requiredQuestionCount(type)}</td></tr>;
+          return <tr key={`${String(row.title ?? type)}-${index}`}><td>{String(row.title ?? row.name ?? type)}</td><td><StatusBadge value="active" label={assessmentTypeLabel(type)} /></td><td>{matchedModule?.title ?? (type === "preCourseTest" || type === "finalExam" ? "Course level" : "Missing backend module")}</td><td>{count}</td><td>{requiredQuestionCount(type)}</td></tr>;
         })}</tbody></table></div>
       </Modal>
       <Modal open={showQuestion} onClose={() => setShowQuestion(false)} title="New question" footer={<><button className="btn" onClick={() => setShowQuestion(false)}>Cancel</button><button className="btn btn-primary" disabled={!questionForm.questionText.trim()} onClick={saveQuestion}>Create</button></>}>
