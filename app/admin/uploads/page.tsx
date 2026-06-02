@@ -47,6 +47,7 @@ export default function UploadsPage() {
   const [durationMinutes, setDurationMinutes] = useState("0");
   const [newModuleTitle, setNewModuleTitle] = useState("Module 1");
   const [loading, setLoading] = useState(false);
+  const [pickerKey, setPickerKey] = useState(0);
   const [uploadProgress, setUploadProgress] = useState("");
   const [creatingModule, setCreatingModule] = useState(false);
   const [creatingId, setCreatingId] = useState<string | null>(null);
@@ -146,6 +147,7 @@ export default function UploadsPage() {
     } finally {
       setUploadProgress("");
       setLoading(false);
+      setPickerKey(current => current + 1);
     }
   };
 
@@ -197,7 +199,7 @@ export default function UploadsPage() {
         {!selectedCourse && <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 12 }}>Create or select a course with at least one class/module before creating lessons.</div>}
         {selectedCourse && modules.length === 0 && <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "end", padding: "12px 0", marginBottom: 12, borderTop: "1px solid var(--hairline)", borderBottom: "1px solid var(--hairline)" }}><label><span style={{ fontSize: 12, color: "var(--ink-3)", display: "block", marginBottom: 6 }}>No class/module exists for this course</span><input className="input" value={newModuleTitle} onChange={e => setNewModuleTitle(e.target.value)} placeholder="Module 1" /></label><button className="btn btn-primary" disabled={creatingModule} onClick={createModule}><Plus size={13} /> {creatingModule ? "Creating..." : "Create module"}</button></div>}
         <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, border: "2px dashed var(--hairline)", borderRadius: 12, padding: "28px 20px", cursor: "pointer", textAlign: "center", background: "var(--bg-sunk)" }}>
-          <input type="file" accept={accept} multiple={kind !== "video"} disabled={loading} style={{ display: "none" }} onChange={e => { const files = Array.from(e.target.files ?? []); if (files.length > 0) uploadFiles(files); e.currentTarget.value = ""; }} />
+          <input key={`${kind}-${pickerKey}`} type="file" accept={accept} multiple={kind !== "video"} disabled={loading} style={{ display: "none" }} onChange={e => { const files = Array.from(e.currentTarget.files ?? []); e.currentTarget.value = ""; if (files.length > 0) void uploadFiles(files); }} />
           <Icon size={22} style={{ color: "var(--ndpc-blue)" }} />
           <div style={{ fontSize: 13, fontWeight: 600 }}>{loading ? `Uploading ${uploadProgress}` : `Select ${kind}${kind === "video" ? "" : " files"}`}</div>
           <div style={{ fontSize: 11, color: "var(--ink-4)" }}>Backend validates kind and MIME type. PDF/material batches upload one file at a time. Maximum upload size is 3GB per file.</div>
