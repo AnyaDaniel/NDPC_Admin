@@ -1,6 +1,6 @@
 ﻿"use client";
 import { useMemo, useState } from "react";
-import { RefreshCw, Shield } from "lucide-react";
+import { KeyRound, RefreshCw, Shield } from "lucide-react";
 import { adminApi, AdminUser } from "@/lib/admin-api";
 import { useApiResource } from "@/lib/use-api-resource";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
@@ -18,6 +18,8 @@ function userStatus(user: AdminUser) {
 export default function UsersPage() {
   const [tab, setTab] = useState<Tab>("all");
   const [search, setSearch] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
   const { data, loading, error, reload } = useApiResource(() => adminApi.users({ pageSize: 100 }), []);
   const users = data?.users ?? [];
 
@@ -33,6 +35,25 @@ export default function UsersPage() {
     admin: users.filter(u => u.role === "admin").length,
   };
 
+  const resetPassword = async (user: AdminUser) => {
+    const password = window.prompt(`Enter a new password for ${user.email}`);
+    if (!password) return;
+    if (password.length < 8) {
+      setMessage("Password must be at least 8 characters.");
+      return;
+    }
+    setResettingId(user.id);
+    setMessage(null);
+    try {
+      await adminApi.resetUserPassword(user.id, password);
+      setMessage(`Password reset for ${user.email}.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Unable to reset password.");
+    } finally {
+      setResettingId(null);
+    }
+  };
+
   return (
     <div style={{ padding: "20px 24px 64px", maxWidth: 1480, margin: "0 auto" }}>
       <div className="flex items-end justify-between gap-4 mb-5">
@@ -43,6 +64,8 @@ export default function UsersPage() {
         </div>
         <button className="btn" onClick={reload}><RefreshCw size={14} /> Refresh</button>
       </div>
+
+      {message && <div className="card mb-4" style={{ padding: 14, color: message.startsWith("Unable") || message.startsWith("Password must") ? "var(--ndpc-red)" : "var(--ndpc-green)" }}>{message}</div>}
 
       <div className="card">
         <Tabs value={tab} onChange={v => setTab(v as Tab)} tabs={[
@@ -58,7 +81,7 @@ export default function UsersPage() {
           <div style={{ overflowX: "auto" }}>
             <table className="tbl">
               <thead>
-                <tr><th>User</th><th>ID</th><th>Role</th><th>Status</th><th className="num">Devices</th><th>Verified</th><th>Joined</th></tr>
+                <tr><th>User</th><th>ID</th><th>Role</th><th>Status</th><th className="num">Devices</th><th>Verified</th><th>Joined</th><th></th></tr>
               </thead>
               <tbody>
                 {filtered.map(u => (
@@ -70,6 +93,7 @@ export default function UsersPage() {
                     <td className="num">{u.activeDevicesCount ?? 0} / {u.maxDevices ?? "-"}</td>
                     <td>{u.isEmailVerified ? "Yes" : "No"}</td>
                     <td><span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11.5, color: "var(--ink-3)" }}>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "-"}</span></td>
+                    <td><button className="btn btn-sm" disabled={resettingId === u.id} onClick={() => resetPassword(u)}><KeyRound size={12} /> {resettingId === u.id ? "Resetting..." : "Reset password"}</button></td>
                   </tr>
                 ))}
               </tbody>

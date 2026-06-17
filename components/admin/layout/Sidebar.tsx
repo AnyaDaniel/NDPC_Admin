@@ -5,6 +5,7 @@ import {
   LayoutDashboard, Users, Smartphone, KeyRound, BookOpen, Upload,
   Award, CreditCard, SubscriptIcon, ShieldAlert, RefreshCw, Settings,
   FileText, TrendingUp, UserCog, HelpCircle,
+  Bell,
 } from "lucide-react";
 
 const NAV = [
@@ -32,6 +33,7 @@ const NAV = [
     { href: "/admin/reset-management",  label: "Reset Management",  icon: RefreshCw },
   ]},
   { section: "System", items: [
+    { href: "/admin/app-updates", label: "App Updates",        icon: Bell },
     { href: "/admin/admins",       label: "Admin Accounts",     icon: UserCog },
     { href: "/admin/audit-logs",   label: "Audit Logs",         icon: FileText },
     { href: "/admin/settings",     label: "Settings",           icon: Settings },

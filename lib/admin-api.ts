@@ -153,6 +153,19 @@ export type UploadResult = {
   lessonDefaults: Partial<AdminLesson> & { allowOffline?: boolean; isEncryptedAsset?: boolean; publicUrl?: string };
 };
 
+export type AppUpdateRelease = {
+  id: string;
+  platform: "windows" | "macos" | "android" | "ios" | string;
+  version: string;
+  minSupportedVersion?: string | null;
+  downloadUrl?: string | null;
+  releaseNotes?: string[] | string | null;
+  mandatory: boolean;
+  isPublished: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 const DIRECT_UPLOAD_API_BASE_URL =
   (process.env.NEXT_PUBLIC_UPLOAD_API_BASE_URL ?? "https://trixlearn-backend.net-trixsolutions.com/api/v1").replace(/\/$/, "");
 
@@ -185,6 +198,12 @@ export const adminApi = {
   users(params: { page?: number; pageSize?: number; search?: string; role?: string } = {}) {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "") as [string, string][]).toString();
     return apiRequest<Paginated<"users", AdminUser>>(`/admin/users${q ? `?${q}` : ""}`);
+  },
+  resetUserPassword(userId: string, password: string) {
+    return apiRequest<{ user: Pick<AdminUser, "id" | "email" | "name"> }>(`/admin/users/${userId}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
   },
 
   async createActivationCodes(payload: { count: number; maxUses: number; expiresInDays: number }, options: { signal?: AbortSignal } = {}) {
@@ -339,6 +358,25 @@ export const adminApi = {
 
     if (!envelope?.data) throw new Error("Upload response was empty.");
     return envelope.data;
+  },
+
+  appUpdates() {
+    return apiRequest<{ releases: AppUpdateRelease[] }>("/admin/app-updates");
+  },
+  createAppUpdate(payload: Partial<AppUpdateRelease>) {
+    return apiRequest<{ release: AppUpdateRelease }>("/admin/app-updates", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateAppUpdate(id: string, payload: Partial<AppUpdateRelease>) {
+    return apiRequest<{ release: AppUpdateRelease }>(`/admin/app-updates/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  deleteAppUpdate(id: string) {
+    return apiRequest<void>(`/admin/app-updates/${id}`, { method: "DELETE" });
+  },
+  publishAppUpdate(id: string) {
+    return apiRequest<{ release: AppUpdateRelease }>(`/admin/app-updates/${id}/publish`, { method: "POST", body: JSON.stringify({}) });
+  },
+  unpublishAppUpdate(id: string) {
+    return apiRequest<{ release: AppUpdateRelease }>(`/admin/app-updates/${id}/unpublish`, { method: "POST", body: JSON.stringify({}) });
   },
 
   startAiSession(payload: { courseId: string; moduleId?: string; topic?: string }) {
