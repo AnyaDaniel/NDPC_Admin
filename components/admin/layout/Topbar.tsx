@@ -17,6 +17,7 @@ const CRUMBS: Record<string, [string, string]> = {
   "/admin/courses":          ["Learning", "Courses & Content"],
   "/admin/assessments":      ["Learning", "Tests & Exams"],
   "/admin/uploads":          ["Learning", "Uploads"],
+  "/admin/uploaded-content": ["Learning", "Uploaded Content"],
   "/admin/certificates":     ["Learning", "Certificates"],
   "/admin/account-recovery": ["Security", "Account Recovery"],
   "/admin/reset-management": ["Security", "Reset Management"],

@@ -26,6 +26,7 @@ const NAV = [
     { href: "/admin/courses",      label: "Courses & Content",  icon: BookOpen },
     { href: "/admin/assessments",  label: "Tests & Exams",      icon: HelpCircle },
     { href: "/admin/uploads",      label: "Uploads",            icon: Upload },
+    { href: "/admin/uploaded-content", label: "Uploaded Content", icon: FileText },
     { href: "/admin/certificates", label: "Certificates",       icon: Award },
   ]},
   { section: "Security", items: [

@@ -153,6 +153,38 @@ export type UploadResult = {
   lessonDefaults: Partial<AdminLesson> & { allowOffline?: boolean; isEncryptedAsset?: boolean; publicUrl?: string };
 };
 
+export type UploadedContentAsset = {
+  id: string;
+  key: string;
+  source?: string;
+  sources?: string[];
+  kind: "video" | "pdf" | "material" | string;
+  fileName: string;
+  title: string;
+  contentType?: string;
+  contentUrl?: string | null;
+  storageProvider?: string | null;
+  storageKey?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  uploadedAt?: string | null;
+  uploadedBy?: { name?: string | null; email?: string | null } | null;
+  isAssigned: boolean;
+  assignmentCount: number;
+  assignedLessons: Array<{
+    id: string;
+    title: string;
+    contentType: string;
+    durationMinutes: number;
+    moduleId: string;
+    moduleTitle: string;
+    courseId: string;
+    courseTitle: string;
+    orderIndex: number;
+    allowOffline?: boolean;
+  }>;
+};
+
 export type AppUpdateRelease = {
   id: string;
   platform: "windows" | "macos" | "android" | "ios" | string;
@@ -310,6 +342,32 @@ export const adminApi = {
   },
   deleteLesson(id: string) {
     return apiRequest<void>(`/admin/lessons/${id}`, { method: "DELETE" });
+  },
+
+  uploadedContent(params: { kind?: string; assigned?: string; search?: string } = {}) {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "") as [string, string][]).toString();
+    return apiRequest<{ assets: UploadedContentAsset[]; total: number; s3ListError?: string | null }>(`/admin/uploaded-content${q ? `?${q}` : ""}`);
+  },
+  assignUploadedContent(payload: {
+    moduleId: string;
+    title: string;
+    contentType: "video" | "pdf";
+    contentUrl?: string | null;
+    storageProvider?: string | null;
+    storageKey?: string | null;
+    mimeType?: string | null;
+    durationMinutes?: number;
+    estimatedMinutes?: number;
+    allowOffline?: boolean;
+    isEncryptedAsset?: boolean;
+  }) {
+    return apiRequest<{ lesson: AdminLesson }>("/admin/uploaded-content/assign", { method: "POST", body: JSON.stringify(payload) });
+  },
+  unassignUploadedContent(lessonId: string) {
+    return apiRequest<{ lessonId: string; title?: string; storageKey?: string | null; contentUrl?: string | null }>("/admin/uploaded-content/unassign", {
+      method: "POST",
+      body: JSON.stringify({ lessonId }),
+    });
   },
 
   async upload(kind: "video" | "pdf" | "material", file: File) {
