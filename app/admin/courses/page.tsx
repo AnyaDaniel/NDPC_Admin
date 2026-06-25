@@ -38,6 +38,10 @@ export default function CoursesPage() {
   const [lessonStorageKey, setLessonStorageKey] = useState("");
   const [lessonMimeType, setLessonMimeType] = useState("video/mp4");
   const [lessonDuration, setLessonDuration] = useState("0");
+  const [editingLessonId, setEditingLessonId] = useState("");
+  const [editLessonTitle, setEditLessonTitle] = useState("");
+  const [editLessonContentType, setEditLessonContentType] = useState<"video" | "pdf" | "text" | "interactive">("video");
+  const [editLessonDuration, setEditLessonDuration] = useState("0");
   const [contentBusy, setContentBusy] = useState(false);
   const [contentError, setContentError] = useState<string | null>(null);
 
@@ -263,6 +267,39 @@ export default function CoursesPage() {
     }
   };
 
+  const beginEditLesson = (lesson: AdminLesson) => {
+    setEditingLessonId(lesson.id);
+    setEditLessonTitle(lesson.title);
+    setEditLessonContentType((lesson.contentType === "video" || lesson.contentType === "pdf" || lesson.contentType === "text" || lesson.contentType === "interactive") ? lesson.contentType : "pdf");
+    setEditLessonDuration(String(lesson.durationMinutes ?? 0));
+  };
+
+  const cancelEditLesson = () => {
+    setEditingLessonId("");
+    setEditLessonTitle("");
+    setEditLessonContentType("video");
+    setEditLessonDuration("0");
+  };
+
+  const saveLesson = async (lesson: AdminLesson) => {
+    if (!editLessonTitle.trim()) return;
+    setContentBusy(true);
+    setContentError(null);
+    try {
+      const updated = await adminApi.updateLesson(lesson.id, {
+        title: editLessonTitle.trim(),
+        contentType: editLessonContentType,
+        durationMinutes: Math.max(0, Number(editLessonDuration) || 0),
+      });
+      setLessons(current => current.map(item => item.id === lesson.id ? { ...item, ...updated.lesson } : item));
+      cancelEditLesson();
+    } catch (err) {
+      setContentError(err instanceof Error ? err.message : "Unable to update lesson.");
+    } finally {
+      setContentBusy(false);
+    }
+  };
+
   const setContentType = (value: typeof lessonContentType) => {
     setLessonContentType(value);
     setLessonMimeType(value === "pdf" ? "application/pdf" : value === "video" ? "video/mp4" : "text/plain");
@@ -338,7 +375,40 @@ export default function CoursesPage() {
             </div>
             <div>
               <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>Lessons in {selectedModule?.title ?? "module"}</div>
-              <div style={{ border: "1px solid var(--hairline)", borderRadius: 8, minHeight: 134, overflow: "hidden" }}>{lessons.length === 0 ? <EmptyState icon={FileText} title="No lessons yet" description="Add a video, PDF, text, or interactive lesson." /> : <table className="tbl"><tbody>{lessons.map(l => <tr key={l.id}><td>{l.title}</td><td>{l.contentType}</td><td className="id-mono">{l.contentUrl ? "url" : "-"}</td><td><button className="btn btn-icon btn-ghost btn-sm btn-danger" onClick={() => removeLesson(l)}><Trash2 size={13} /></button></td></tr>)}</tbody></table>}</div>
+              <div style={{ border: "1px solid var(--hairline)", borderRadius: 8, minHeight: 134, overflow: "hidden" }}>{lessons.length === 0 ? <EmptyState icon={FileText} title="No lessons yet" description="Add a video, PDF, text, or interactive lesson." /> : <div style={{ display: "grid" }}>{lessons.map((l, index) => {
+                const editing = editingLessonId === l.id;
+                const type = String(l.contentType ?? "").toLowerCase();
+                const minutesLabel = type === "video" ? "Video time / duration (mins)" : type === "pdf" ? "Study time / reading time (mins)" : "Minutes";
+                return <div key={l.id} style={{ display: "grid", gap: 8, padding: 10, borderBottom: index === lessons.length - 1 ? "none" : "1px solid var(--hairline)" }}>
+                  {editing ? <>
+                    <label><span style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 5 }}>Display title</span><input className="input" value={editLessonTitle} onChange={e => setEditLessonTitle(e.target.value)} /></label>
+                    <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: 8 }}>
+                      <label><span style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 5 }}>Type</span><select className="input" value={editLessonContentType} onChange={e => setEditLessonContentType(e.target.value as typeof editLessonContentType)}><option value="video">Video</option><option value="pdf">PDF/material</option><option value="text">Text</option><option value="interactive">Interactive</option></select></label>
+                      <label><span style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 5 }}>{minutesLabel}</span><input className="input" type="number" min={0} value={editLessonDuration} onChange={e => setEditLessonDuration(e.target.value)} /></label>
+                    </div>
+                    <div className="flex gap-1 justify-between">
+                      <span className="id-mono" style={{ color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>URL/storage unchanged · {l.storageKey || (l.contentUrl ? "url present" : "no url")}</span>
+                      <span className="flex gap-1">
+                        <button className="btn btn-sm" disabled={contentBusy} onClick={cancelEditLesson}><X size={13} /> Cancel</button>
+                        <button className="btn btn-sm btn-primary" disabled={contentBusy || !editLessonTitle.trim()} onClick={() => saveLesson(l)}><Save size={13} /> Save</button>
+                      </span>
+                    </div>
+                  </> : <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</div>
+                      <div className="flex gap-2" style={{ marginTop: 4, flexWrap: "wrap" }}>
+                        <StatusBadge value={type === "video" ? "active" : "draft"} label={type || "content"} />
+                        <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{type === "video" ? "Video time" : type === "pdf" ? "Study time" : "Minutes"}: {l.durationMinutes ?? 0} min</span>
+                        <span className="id-mono" style={{ color: "var(--ink-3)" }}>{l.contentUrl ? "url" : "-"}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 justify-end">
+                      <button className="btn btn-icon btn-ghost btn-sm" title="Edit content metadata" disabled={contentBusy} onClick={() => beginEditLesson(l)}><Pencil size={13} /></button>
+                      <button className="btn btn-icon btn-ghost btn-sm btn-danger" title="Delete lesson" disabled={contentBusy} onClick={() => removeLesson(l)}><Trash2 size={13} /></button>
+                    </div>
+                  </div>}
+                </div>;
+              })}</div>}</div>
             </div>
           </div>
           <div style={{ display: "grid", gap: 12, borderTop: "1px solid var(--hairline)", paddingTop: 14 }}>
